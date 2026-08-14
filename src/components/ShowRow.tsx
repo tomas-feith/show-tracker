@@ -14,7 +14,7 @@ function describeState(state: ShowState): { label: string; color: string } {
         label:
           state.seasonsBehind === 1
             ? `Season ${state.latest.seasonNumber} out ${describeDays(state.daysAgo, 'ago')}`
-            : `${state.seasonsBehind} seasons behind, up to ${state.latest.seasonNumber}`,
+            : `${state.seasonsBehind} seasons behind, newest is S${state.latest.seasonNumber}`,
         color: colors.new,
       };
     case 'airing':
@@ -43,12 +43,12 @@ type Props = {
 export function ShowRow({ show, today, onPress }: Props) {
   const state = showState(show, today);
   const { label, color } = describeState(state);
-  const isNew = state.kind === 'behind';
+  const hasBacklog = state.kind === 'behind';
 
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.row, isNew && styles.rowNew, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.row, hasBacklog && styles.rowNew, pressed && styles.pressed]}
     >
       <Poster path={show.posterPath} name={show.name} width={54} />
       <View style={styles.body}>

@@ -169,6 +169,9 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: spacing.lg,
+    // Clear the floating add button, which would otherwise sit on top of the
+    // last row once the list is long enough to scroll to the bottom.
+    paddingBottom: 96,
   },
   emptyList: {
     flexGrow: 1,

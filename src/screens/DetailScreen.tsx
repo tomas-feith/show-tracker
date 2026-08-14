@@ -169,7 +169,9 @@ export function DetailScreen({ route, navigation }: Props) {
           <Text style={styles.statusStrong}>
             {state.seasonsBehind === 1
               ? `Season ${state.latest.seasonNumber} arrived ${describeDays(state.daysAgo, 'ago')}.`
-              : `You are ${state.seasonsBehind} seasons behind, through season ${state.latest.seasonNumber}.`}
+              : // "through season N" read as though the user had watched that
+                // far, contradicting the ticks below. Name it as the newest.
+                `You are ${state.seasonsBehind} seasons behind. Season ${state.latest.seasonNumber} is the newest.`}
           </Text>
         )}
         {state.kind === 'airing' && (
