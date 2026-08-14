@@ -3,11 +3,13 @@ import {
   describeDays,
   formatEpisode,
   hasHappened,
-  hasNewSeason,
+  hasAired,
+  isBehind,
   initialWatermark,
   latestAiredSeason,
   nextUnairedSeason,
   realSeasons,
+  seasonsBehind,
   showState,
   sortLibrary,
   todayISO,
@@ -30,7 +32,8 @@ function show(overrides: Partial<TrackedShow> = {}): TrackedShow {
     seasons: [],
     lastEpisode: null,
     nextEpisode: null,
-    acknowledgedSeason: 0,
+    watchedThroughSeason: 0,
+    knownAiredSeason: 0,
     addedAt: '2026-01-01T00:00:00.000Z',
     lastCheckedAt: null,
     ...overrides,
@@ -111,38 +114,85 @@ describe('watermark behaviour', () => {
     const seasons = [season(1, '2020-01-01'), season(2, '2021-01-01'), season(3, '2022-01-01')];
     const watermark = initialWatermark(seasons, TODAY);
     expect(watermark).toBe(3);
-    expect(hasNewSeason(show({ seasons, acknowledgedSeason: watermark }), TODAY)).toBe(false);
+    expect(isBehind(show({ seasons, watchedThroughSeason: watermark }), TODAY)).toBe(false);
   });
 
   it('reports a new season once one airs above the watermark', () => {
     const seasons = [season(1, '2020-01-01'), season(2, '2026-02-01')];
-    expect(hasNewSeason(show({ seasons, acknowledgedSeason: 1 }), TODAY)).toBe(true);
+    expect(isBehind(show({ seasons, watchedThroughSeason: 1 }), TODAY)).toBe(true);
   });
 
   it('does not report an unreleased season as new', () => {
     const seasons = [season(1, '2020-01-01'), season(2, '2027-02-01')];
-    expect(hasNewSeason(show({ seasons, acknowledgedSeason: 1 }), TODAY)).toBe(false);
+    expect(isBehind(show({ seasons, watchedThroughSeason: 1 }), TODAY)).toBe(false);
   });
 
   it('handles a show with no aired seasons at all', () => {
     expect(initialWatermark([], TODAY)).toBe(0);
-    expect(hasNewSeason(show({ seasons: [] }), TODAY)).toBe(false);
+    expect(isBehind(show({ seasons: [] }), TODAY)).toBe(false);
+  });
+});
+
+describe('seasonsBehind', () => {
+  const seasons = [
+    season(0, '2019-01-01'), // specials, never counted
+    season(1, '2020-01-01'),
+    season(2, '2021-01-01'),
+    season(3, '2022-01-01'),
+    season(4, '2027-01-01'), // announced but not aired
+  ];
+
+  it('counts only aired seasons above what the user watched', () => {
+    expect(seasonsBehind(show({ seasons, watchedThroughSeason: 1 }), TODAY)).toBe(2);
+    expect(seasonsBehind(show({ seasons, watchedThroughSeason: 2 }), TODAY)).toBe(1);
+    expect(seasonsBehind(show({ seasons, watchedThroughSeason: 3 }), TODAY)).toBe(0);
+  });
+
+  it('counts every aired season when the user has not started', () => {
+    expect(seasonsBehind(show({ seasons, watchedThroughSeason: 0 }), TODAY)).toBe(3);
+  });
+
+  it('never goes negative if the watermark outruns the season list', () => {
+    // Possible if TMDB withdraws a season the user had already marked watched.
+    expect(seasonsBehind(show({ seasons, watchedThroughSeason: 99 }), TODAY)).toBe(0);
+  });
+
+  it('agrees with hasAired about what counts', () => {
+    expect(hasAired(season(4, '2027-01-01'), TODAY)).toBe(false);
+    expect(hasAired(season(0, '2019-01-01'), TODAY)).toBe(false);
+    expect(hasAired(season(2, '2021-01-01', 0), TODAY)).toBe(false);
+    expect(hasAired(season(2, '2021-01-01'), TODAY)).toBe(true);
   });
 });
 
 describe('showState', () => {
+  it('reports how many seasons deep the backlog is', () => {
+    const state = showState(
+      show({
+        seasons: [season(1, '2020-01-01'), season(2, '2021-01-01'), season(3, '2026-06-01')],
+        watchedThroughSeason: 0,
+      }),
+      TODAY
+    );
+    expect(state.kind).toBe('behind');
+    if (state.kind === 'behind') {
+      expect(state.seasonsBehind).toBe(3);
+      expect(state.latest.seasonNumber).toBe(3);
+    }
+  });
+
   it('prioritises an unseen new season over an upcoming episode', () => {
     const state = showState(
       show({
         seasons: [season(1, '2020-01-01'), season(2, '2026-06-01')],
-        acknowledgedSeason: 1,
+        watchedThroughSeason: 1,
         nextEpisode: { seasonNumber: 2, episodeNumber: 8, name: 'Later', airDate: '2026-09-01' },
       }),
       TODAY
     );
-    expect(state.kind).toBe('new_season');
-    if (state.kind === 'new_season') {
-      expect(state.season.seasonNumber).toBe(2);
+    expect(state.kind).toBe('behind');
+    if (state.kind === 'behind') {
+      expect(state.latest.seasonNumber).toBe(2);
       expect(state.daysAgo).toBe(74);
     }
   });
@@ -151,7 +201,7 @@ describe('showState', () => {
     const state = showState(
       show({
         seasons: [season(1, '2026-08-01')],
-        acknowledgedSeason: 1,
+        watchedThroughSeason: 1,
         nextEpisode: { seasonNumber: 1, episodeNumber: 3, name: 'Next', airDate: '2026-08-21' },
       }),
       TODAY
@@ -167,7 +217,7 @@ describe('showState', () => {
     const state = showState(
       show({
         seasons: [season(1, '2020-01-01'), season(2, '2026-11-01')],
-        acknowledgedSeason: 1,
+        watchedThroughSeason: 1,
       }),
       TODAY
     );
@@ -176,7 +226,7 @@ describe('showState', () => {
 
   it('marks finished shows as ended', () => {
     const state = showState(
-      show({ seasons: [season(1, '2020-01-01')], acknowledgedSeason: 1, status: 'Ended' }),
+      show({ seasons: [season(1, '2020-01-01')], watchedThroughSeason: 1, status: 'Ended' }),
       TODAY
     );
     expect(state.kind).toBe('ended');
@@ -184,7 +234,7 @@ describe('showState', () => {
 
   it('marks a returning show with nothing scheduled as waiting', () => {
     const state = showState(
-      show({ seasons: [season(1, '2020-01-01')], acknowledgedSeason: 1 }),
+      show({ seasons: [season(1, '2020-01-01')], watchedThroughSeason: 1 }),
       TODAY
     );
     expect(state.kind).toBe('waiting');
@@ -195,7 +245,7 @@ describe('showState', () => {
     const state = showState(
       show({
         seasons: [season(1, '2020-01-01')],
-        acknowledgedSeason: 1,
+        watchedThroughSeason: 1,
         status: 'Ended',
         nextEpisode: { seasonNumber: 1, episodeNumber: 9, name: 'Stale', airDate: '2020-05-01' },
       }),
@@ -208,19 +258,19 @@ describe('showState', () => {
 describe('sortLibrary', () => {
   it('floats new seasons to the top and ended shows to the bottom', () => {
     const shows = [
-      show({ id: 1, name: 'Ended Show', seasons: [season(1, '2019-01-01')], acknowledgedSeason: 1, status: 'Ended' }),
+      show({ id: 1, name: 'Ended Show', seasons: [season(1, '2019-01-01')], watchedThroughSeason: 1, status: 'Ended' }),
       show({
         id: 2,
         name: 'Airing Show',
         seasons: [season(1, '2026-08-01')],
-        acknowledgedSeason: 1,
+        watchedThroughSeason: 1,
         nextEpisode: { seasonNumber: 1, episodeNumber: 3, name: 'x', airDate: '2026-08-20' },
       }),
       show({
         id: 3,
         name: 'New Season Show',
         seasons: [season(1, '2020-01-01'), season(2, '2026-03-01')],
-        acknowledgedSeason: 1,
+        watchedThroughSeason: 1,
       }),
     ];
     expect(sortLibrary(shows, TODAY).map((s) => s.id)).toEqual([3, 2, 1]);
@@ -228,8 +278,8 @@ describe('sortLibrary', () => {
 
   it('orders multiple new seasons by most recent drop first', () => {
     const shows = [
-      show({ id: 1, name: 'Older', seasons: [season(1, '2019-01-01'), season(2, '2026-01-01')], acknowledgedSeason: 1 }),
-      show({ id: 2, name: 'Newer', seasons: [season(1, '2019-01-01'), season(2, '2026-08-01')], acknowledgedSeason: 1 }),
+      show({ id: 1, name: 'Older', seasons: [season(1, '2019-01-01'), season(2, '2026-01-01')], watchedThroughSeason: 1 }),
+      show({ id: 2, name: 'Newer', seasons: [season(1, '2019-01-01'), season(2, '2026-08-01')], watchedThroughSeason: 1 }),
     ];
     expect(sortLibrary(shows, TODAY).map((s) => s.id)).toEqual([2, 1]);
   });

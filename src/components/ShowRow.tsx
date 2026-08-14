@@ -8,9 +8,13 @@ import { Poster } from './Poster';
 /** One line of status text plus the colour that carries its urgency. */
 function describeState(state: ShowState): { label: string; color: string } {
   switch (state.kind) {
-    case 'new_season':
+    case 'behind':
+      // One unwatched season reads better as news; several read as a backlog.
       return {
-        label: `Season ${state.season.seasonNumber} out ${describeDays(state.daysAgo, 'ago')}`,
+        label:
+          state.seasonsBehind === 1
+            ? `Season ${state.latest.seasonNumber} out ${describeDays(state.daysAgo, 'ago')}`
+            : `${state.seasonsBehind} seasons behind, up to ${state.latest.seasonNumber}`,
         color: colors.new,
       };
     case 'airing':
@@ -39,7 +43,7 @@ type Props = {
 export function ShowRow({ show, today, onPress }: Props) {
   const state = showState(show, today);
   const { label, color } = describeState(state);
-  const isNew = state.kind === 'new_season';
+  const isNew = state.kind === 'behind';
 
   return (
     <Pressable
@@ -55,9 +59,11 @@ export function ShowRow({ show, today, onPress }: Props) {
           {label}
         </Text>
       </View>
-      {isNew && (
+      {state.kind === 'behind' && (
         <View style={styles.badge}>
-          <Text style={styles.badgeText}>NEW</Text>
+          <Text style={styles.badgeText}>
+            {state.seasonsBehind === 1 ? 'NEW' : `+${state.seasonsBehind}`}
+          </Text>
         </View>
       )}
     </Pressable>

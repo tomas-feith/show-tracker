@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { ShowRow } from '../components/ShowRow';
-import { sortLibrary, todayISO } from '../core/newness';
+import { isBehind, sortLibrary, todayISO } from '../core/newness';
 import type { RootStackParamList } from '../navigation/types';
 import { useLibrary } from '../state/LibraryContext';
 import { colors, radius, spacing } from '../theme';
@@ -91,6 +91,7 @@ export function LibraryScreen({ navigation }: Props) {
   }
 
   const ordered = sortLibrary(shows, today);
+  const catchUpCount = ordered.filter((s) => isBehind(s, today)).length;
 
   return (
     <View style={styles.container}>
@@ -115,7 +116,14 @@ export function LibraryScreen({ navigation }: Props) {
         }
         ListHeaderComponent={
           ordered.length > 0 ? (
-            <Text style={styles.meta}>{formatLastCheck(lastCheck)}</Text>
+            <View style={styles.header}>
+              <Text style={styles.headline}>
+                {catchUpCount === 0
+                  ? 'All caught up'
+                  : `${catchUpCount} show${catchUpCount === 1 ? '' : 's'} to catch up on`}
+              </Text>
+              <Text style={styles.meta}>{formatLastCheck(lastCheck)}</Text>
+            </View>
           ) : null
         }
         renderItem={({ item }) => (
@@ -165,10 +173,18 @@ const styles = StyleSheet.create({
   emptyList: {
     flexGrow: 1,
   },
+  header: {
+    marginBottom: spacing.md,
+    gap: 2,
+  },
+  headline: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+  },
   meta: {
     color: colors.textFaint,
     fontSize: 12,
-    marginBottom: spacing.md,
   },
   emptyTitle: {
     color: colors.text,

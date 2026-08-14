@@ -14,8 +14,10 @@ import { Poster } from '../components/Poster';
 import {
   describeDays,
   formatEpisode,
-  hasNewSeason,
+  hasAired,
+  isBehind,
   realSeasons,
+  seasonsBehind,
   showState,
   todayISO,
 } from '../core/newness';
@@ -30,8 +32,9 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Detail'>;
 function asPreview(detail: ShowDetail): TrackedShow {
   return {
     ...detail,
-    // A preview has no watermark, so nothing can read as "new" here.
-    acknowledgedSeason: Number.MAX_SAFE_INTEGER,
+    // A preview has no watermark, so nothing can read as backlog here.
+    watchedThroughSeason: Number.MAX_SAFE_INTEGER,
+    knownAiredSeason: Number.MAX_SAFE_INTEGER,
     addedAt: '',
     lastCheckedAt: null,
   };
@@ -39,7 +42,7 @@ function asPreview(detail: ShowDetail): TrackedShow {
 
 export function DetailScreen({ route, navigation }: Props) {
   const { id } = route.params;
-  const { apiKey, shows, addShow, removeShow, acknowledge } = useLibrary();
+  const { apiKey, shows, addShow, removeShow, setWatchedThrough, markCaughtUp } = useLibrary();
   const today = todayISO();
 
   const tracked = shows.find((s) => s.id === id) ?? null;
@@ -98,7 +101,8 @@ export function DetailScreen({ route, navigation }: Props) {
 
   const state = showState(show, today);
   const seasons = [...realSeasons(show.seasons)].sort((a, b) => b.seasonNumber - a.seasonNumber);
-  const showsNew = tracked ? hasNewSeason(tracked, today) : false;
+  const behindBy = tracked ? seasonsBehind(tracked, today) : 0;
+  const showsNew = tracked ? isBehind(tracked, today) : false;
 
   async function onFollow() {
     setBusy(true);
@@ -142,12 +146,14 @@ export function DetailScreen({ route, navigation }: Props) {
       <View
         style={[
           styles.statusCard,
-          state.kind === 'new_season' && tracked ? styles.statusCardNew : null,
+          state.kind === 'behind' && tracked ? styles.statusCardNew : null,
         ]}
       >
-        {state.kind === 'new_season' && tracked && (
+        {state.kind === 'behind' && tracked && (
           <Text style={styles.statusStrong}>
-            Season {state.season.seasonNumber} arrived {describeDays(state.daysAgo, 'ago')}.
+            {state.seasonsBehind === 1
+              ? `Season ${state.latest.seasonNumber} arrived ${describeDays(state.daysAgo, 'ago')}.`
+              : `You are ${state.seasonsBehind} seasons behind, through season ${state.latest.seasonNumber}.`}
           </Text>
         )}
         {state.kind === 'airing' && (
@@ -179,8 +185,10 @@ export function DetailScreen({ route, navigation }: Props) {
         {tracked ? (
           <>
             {showsNew && (
-              <Pressable style={styles.primaryBtn} onPress={() => void acknowledge(id)}>
-                <Text style={styles.primaryText}>Mark as seen</Text>
+              <Pressable style={styles.primaryBtn} onPress={() => void markCaughtUp(id)}>
+                <Text style={styles.primaryText}>
+                  {behindBy === 1 ? 'Mark watched' : 'Caught up'}
+                </Text>
               </Pressable>
             )}
             <Pressable style={styles.secondaryBtn} onPress={onUnfollow}>
@@ -203,19 +211,56 @@ export function DetailScreen({ route, navigation }: Props) {
       {overview.length > 0 && <Text style={styles.overview}>{overview}</Text>}
 
       <Text style={styles.sectionTitle}>Seasons</Text>
+      {tracked && (
+        <Text style={styles.sectionHint}>
+          Tap the last season you finished. Tapping it again clears it back to unwatched.
+        </Text>
+      )}
+
       {seasons.map((season) => {
-        const isUnseen = tracked ? season.seasonNumber > tracked.acknowledgedSeason : false;
+        const watched = tracked ? season.seasonNumber <= tracked.watchedThroughSeason : false;
+        const aired = hasAired(season, today);
+        const isUnseen = tracked ? !watched && aired : false;
+
+        // Tapping the current mark clears it, so a mis-tap is undoable without
+        // a separate control.
+        const onTap = () => {
+          if (!tracked) return;
+          const target =
+            tracked.watchedThroughSeason === season.seasonNumber ? season.seasonNumber - 1 : season.seasonNumber;
+          void setWatchedThrough(id, target);
+        };
+
         return (
-          <View key={season.seasonNumber} style={styles.seasonRow}>
+          <Pressable
+            key={season.seasonNumber}
+            onPress={onTap}
+            disabled={!tracked}
+            accessibilityRole={tracked ? 'button' : undefined}
+            accessibilityState={tracked ? { selected: watched } : undefined}
+            accessibilityLabel={
+              tracked ? `${season.name}, ${watched ? 'watched' : 'not watched'}` : season.name
+            }
+            style={({ pressed }) => [
+              styles.seasonRow,
+              watched && styles.seasonRowWatched,
+              pressed && styles.pressed,
+            ]}
+          >
+            {tracked && (
+              <Text style={[styles.check, watched && styles.checkOn]}>{watched ? '✓' : '○'}</Text>
+            )}
             <View style={styles.seasonBody}>
-              <Text style={styles.seasonName}>{season.name}</Text>
+              <Text style={[styles.seasonName, watched && styles.seasonNameWatched]}>
+                {season.name}
+              </Text>
               <Text style={styles.seasonMeta}>
                 {season.airDate ?? 'No date yet'} &middot; {season.episodeCount} ep
                 {season.episodeCount === 1 ? '' : 's'}
               </Text>
             </View>
             {isUnseen && <Text style={styles.seasonFlag}>NEW</Text>}
-          </View>
+          </Pressable>
         );
       })}
     </ScrollView>
@@ -315,15 +360,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  sectionHint: {
+    color: colors.textFaint,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: -spacing.sm,
+  },
   seasonRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.md,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.md,
     marginTop: -spacing.sm,
+  },
+  seasonRowWatched: {
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.surfaceAlt,
+  },
+  pressed: {
+    opacity: 0.7,
+  },
+  check: {
+    fontSize: 15,
+    color: colors.textFaint,
+    width: 18,
+    textAlign: 'center',
+  },
+  checkOn: {
+    color: colors.airing,
   },
   seasonBody: {
     flex: 1,
@@ -333,6 +401,9 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: '600',
+  },
+  seasonNameWatched: {
+    color: colors.textMuted,
   },
   seasonMeta: {
     color: colors.textFaint,

@@ -90,7 +90,9 @@ export function SearchScreen({ navigation }: Props) {
 
       {error && <Text style={styles.error}>{error}</Text>}
 
-      {loading && visible.length === 0 ? (
+      {/* Derived, not stored: deleting back to one character must hide the
+          spinner even though the in-flight request never resolves into it. */}
+      {loading && !tooShort && visible.length === 0 ? (
         <ActivityIndicator style={styles.loader} color={colors.accent} />
       ) : (
         <FlatList

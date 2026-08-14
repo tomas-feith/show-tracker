@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# Runs CI's checks before a commit lands. The whole suite takes a few seconds
+# here, unlike the Gradle projects where tests are left to CI.
+#
+# Enable with:  git config core.hooksPath .githooks
+# Skip once with:  git commit --no-verify
+
+set -e
+
+# Nothing in the TypeScript sources changed, so nothing here can fail.
+if ! git diff --cached --name-only --diff-filter=ACM | grep -qE '\.(ts|tsx|js|jsx|json)$'; then
+    exit 0
+fi
+
+echo "pre-commit: lint, typecheck, test"
+
+npm run --silent lint
+npm run --silent typecheck
+npx --no-install jest --silent --passWithNoTests
+
+echo "pre-commit: ok"

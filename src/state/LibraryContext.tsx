@@ -26,7 +26,10 @@ type LibraryValue = {
   isTracked: (id: number) => boolean;
   addShow: (id: number) => Promise<void>;
   removeShow: (id: number) => Promise<void>;
-  acknowledge: (id: number) => Promise<void>;
+  /** Record that the user has watched through `seasonNumber` (0 = not started). */
+  setWatchedThrough: (id: number, seasonNumber: number) => Promise<void>;
+  /** Shorthand for "I'm up to date": watched through the latest aired season. */
+  markCaughtUp: (id: number) => Promise<void>;
   refresh: () => Promise<void>;
 };
 
@@ -50,11 +53,13 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  /** Persist and update in one step so state and storage cannot drift apart. */
-  const commit = useCallback(async (next: TrackedShow[]) => {
-    setShows(next);
-    await saveShows(next);
-  }, []);
+  // Persist whenever the library changes, rather than at each call site, so
+  // storage cannot drift from state. Skipped until the initial load completes,
+  // which would otherwise write an empty array over real data.
+  useEffect(() => {
+    if (!ready) return;
+    void saveShows(shows);
+  }, [shows, ready]);
 
   const setApiKey = useCallback(async (key: string) => {
     await saveApiKey(key);
@@ -71,11 +76,11 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const addShow = useCallback(
     async (id: number) => {
       if (!apiKey) throw new Error('No TMDB key configured.');
-      if (shows.some((s) => s.id === id)) return;
 
       const detail = await fetchShow(apiKey, id);
       const today = todayISO();
       const now = new Date().toISOString();
+      const watermark = initialWatermark(detail.seasons, today);
 
       const tracked: TrackedShow = {
         id: detail.id,
@@ -87,37 +92,42 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         lastEpisode: detail.lastEpisode,
         nextEpisode: detail.nextEpisode,
         // Start level with the current season so adding a show is quiet.
-        acknowledgedSeason: initialWatermark(detail.seasons, today),
+        watchedThroughSeason: watermark,
+        knownAiredSeason: watermark,
         addedAt: now,
         lastCheckedAt: now,
       };
 
-      await commit([...shows, tracked]);
+      // Functional update: the fetch above is slow enough that the library may
+      // have changed underneath us. The guard also runs here, so a double tap
+      // cannot add the same show twice.
+      setShows((prev) => (prev.some((s) => s.id === id) ? prev : [...prev, tracked]));
     },
-    [apiKey, shows, commit]
+    [apiKey]
   );
 
-  const removeShow = useCallback(
-    async (id: number) => {
-      await commit(shows.filter((s) => s.id !== id));
-    },
-    [shows, commit]
-  );
+  const removeShow = useCallback(async (id: number) => {
+    setShows((prev) => prev.filter((s) => s.id !== id));
+  }, []);
 
-  /** Mark the current latest season as seen, clearing the "new" badge. */
-  const acknowledge = useCallback(
-    async (id: number) => {
-      const today = todayISO();
-      await commit(
-        shows.map((s) => {
-          if (s.id !== id) return s;
-          const latest = latestAiredSeason(s.seasons, today);
-          return latest ? { ...s, acknowledgedSeason: latest.seasonNumber } : s;
-        })
-      );
-    },
-    [shows, commit]
-  );
+  const setWatchedThrough = useCallback(async (id: number, seasonNumber: number) => {
+    setShows((prev) =>
+      prev.map((s) =>
+        s.id === id ? { ...s, watchedThroughSeason: Math.max(0, seasonNumber) } : s
+      )
+    );
+  }, []);
+
+  const markCaughtUp = useCallback(async (id: number) => {
+    const today = todayISO();
+    setShows((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        const latest = latestAiredSeason(s.seasons, today);
+        return latest ? { ...s, watchedThroughSeason: latest.seasonNumber } : s;
+      })
+    );
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!apiKey || refreshing) return;
@@ -125,7 +135,11 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     try {
       const outcome = await refreshShows(apiKey, shows);
-      await commit(outcome.shows);
+
+      // Fold results in by id instead of replacing wholesale: a show followed
+      // or removed while the network call was in flight must survive.
+      const byId = new Map(outcome.shows.map((s) => [s.id, s]));
+      setShows((prev) => prev.map((s) => byId.get(s.id) ?? s));
 
       const stamp = new Date().toISOString();
       await saveLastCheck(stamp);
@@ -145,7 +159,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setRefreshing(false);
     }
-  }, [apiKey, refreshing, shows, commit]);
+  }, [apiKey, refreshing, shows]);
 
   const value = useMemo(
     () => ({
@@ -160,7 +174,8 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       isTracked,
       addShow,
       removeShow,
-      acknowledge,
+      setWatchedThrough,
+      markCaughtUp,
       refresh,
     }),
     [
@@ -175,7 +190,8 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       isTracked,
       addShow,
       removeShow,
-      acknowledge,
+      setWatchedThrough,
+      markCaughtUp,
       refresh,
     ]
   );

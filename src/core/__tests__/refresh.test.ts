@@ -17,7 +17,8 @@ function show(overrides: Partial<TrackedShow> = {}): TrackedShow {
     seasons: [],
     lastEpisode: null,
     nextEpisode: null,
-    acknowledgedSeason: 0,
+    watchedThroughSeason: 0,
+    knownAiredSeason: 0,
     addedAt: '2026-01-01T00:00:00.000Z',
     lastCheckedAt: null,
     ...overrides,
@@ -41,9 +42,9 @@ function detail(overrides: Partial<ShowDetail> = {}): ShowDetail {
 
 describe('mergeShow', () => {
   it('preserves the user watermark and added date', () => {
-    const existing = show({ acknowledgedSeason: 4, addedAt: '2025-05-05T00:00:00.000Z' });
+    const existing = show({ watchedThroughSeason: 4, addedAt: '2025-05-05T00:00:00.000Z' });
     const merged = mergeShow(existing, detail({ seasons: [season(5, '2026-01-01')] }));
-    expect(merged.acknowledgedSeason).toBe(4);
+    expect(merged.watchedThroughSeason).toBe(4);
     expect(merged.addedAt).toBe('2025-05-05T00:00:00.000Z');
   });
 
@@ -62,48 +63,77 @@ describe('mergeShow', () => {
 
 describe('findDiscovery', () => {
   it('announces a season that appeared since the last check', () => {
-    const before = show({ seasons: [season(1, '2020-01-01')], acknowledgedSeason: 1 });
+    const before = show({
+      seasons: [season(1, '2020-01-01')],
+      watchedThroughSeason: 1,
+      knownAiredSeason: 1,
+    });
     const after = { ...before, seasons: [season(1, '2020-01-01'), season(2, '2026-08-01')] };
     expect(findDiscovery(before, after, TODAY)?.seasonNumber).toBe(2);
   });
 
-  it('stays quiet when nothing changed, even with an unseen season', () => {
-    // The user has been told already and has not marked it seen; re-announcing
-    // on every refresh would be spam.
-    const before = show({
-      seasons: [season(1, '2020-01-01'), season(2, '2026-08-01')],
-      acknowledgedSeason: 1,
-    });
+  it('announces a season TMDB listed early once its air date arrives', () => {
+    // The regression that matters. TMDB announced season 2 months ahead, so it
+    // was already in the stored season list with a future date. Today that date
+    // passed. Nothing about the data changed - only the calendar did - and this
+    // is exactly the "new season dropped and I never heard" case.
+    const stored = [season(1, '2020-01-01'), season(2, '2026-08-10')];
+    const before = show({ seasons: stored, watchedThroughSeason: 1, knownAiredSeason: 1 });
+    const after = { ...before, seasons: stored };
+    expect(findDiscovery(before, after, TODAY)?.seasonNumber).toBe(2);
+  });
+
+  it('stays quiet once that season has been recorded as known', () => {
+    // The refresh that announced it also raised knownAiredSeason, so the next
+    // refresh must not announce the same season again.
+    const stored = [season(1, '2020-01-01'), season(2, '2026-08-10')];
+    const before = show({ seasons: stored, watchedThroughSeason: 1, knownAiredSeason: 2 });
     expect(findDiscovery(before, { ...before }, TODAY)).toBeNull();
   });
 
   it('stays quiet when the new season is already acknowledged', () => {
-    const before = show({ seasons: [season(1, '2020-01-01')], acknowledgedSeason: 2 });
+    const before = show({
+      seasons: [season(1, '2020-01-01')],
+      watchedThroughSeason: 2,
+      knownAiredSeason: 1,
+    });
     const after = { ...before, seasons: [season(1, '2020-01-01'), season(2, '2026-08-01')] };
     expect(findDiscovery(before, after, TODAY)).toBeNull();
   });
 
   it('stays quiet when the newly listed season has not aired yet', () => {
-    const before = show({ seasons: [season(1, '2020-01-01')], acknowledgedSeason: 1 });
+    const before = show({
+      seasons: [season(1, '2020-01-01')],
+      watchedThroughSeason: 1,
+      knownAiredSeason: 1,
+    });
     const after = { ...before, seasons: [season(1, '2020-01-01'), season(2, '2027-01-01')] };
     expect(findDiscovery(before, after, TODAY)).toBeNull();
   });
 
-  it('announces a season that crossed its air date without any data change', () => {
-    // The season was already listed; today it simply became watchable.
-    const before = show({
-      seasons: [season(1, '2020-01-01'), season(2, TODAY)],
-      acknowledgedSeason: 1,
-    });
-    // Yesterday season 2 had not aired, so `before` evaluated at yesterday's
-    // date had a latest of season 1; today it rises to season 2.
-    const yesterdayView = { ...before, seasons: [season(1, '2020-01-01')] };
-    expect(findDiscovery(yesterdayView, before, TODAY)?.seasonNumber).toBe(2);
-  });
-
   it('announces the first ever aired season of a newly started show', () => {
-    const before = show({ seasons: [season(1, '2027-01-01')], acknowledgedSeason: 0 });
+    const before = show({ seasons: [season(1, '2027-01-01')], watchedThroughSeason: 0 });
     const after = { ...before, seasons: [season(1, '2026-08-01')] };
     expect(findDiscovery(before, after, TODAY)?.seasonNumber).toBe(1);
+  });
+});
+
+describe('the announce-once cycle end to end', () => {
+  it('announces a newly aired season exactly once across repeated refreshes', () => {
+    const seasons = [season(1, '2020-01-01'), season(2, '2026-08-10')];
+    // Followed back when only season 1 had aired.
+    let tracked = show({
+      seasons: [season(1, '2020-01-01')],
+      watchedThroughSeason: 1,
+      knownAiredSeason: 1,
+    });
+
+    const first = mergeShow(tracked, detail({ seasons }), new Date('2026-08-14T09:00:00Z'));
+    expect(findDiscovery(tracked, first, TODAY)?.seasonNumber).toBe(2);
+    expect(first.knownAiredSeason).toBe(2);
+
+    tracked = first;
+    const second = mergeShow(tracked, detail({ seasons }), new Date('2026-08-14T21:00:00Z'));
+    expect(findDiscovery(tracked, second, TODAY)).toBeNull();
   });
 });

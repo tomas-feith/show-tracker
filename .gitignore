@@ -35,15 +35,32 @@ yarn-error.*
 .env.*
 !.env.example
 
-# credentials and signing material
-# The TMDB key is entered in the app and kept in device storage, never in the
-# repo; these rules cover anything a native build or EAS might drop here.
+# Signing and secrets. Nothing here is ever safe to publish, and this repo is
+# public - no negated exceptions, so a stray keystore cannot be re-included.
+# The TMDB key is entered in the app and kept in device storage, never here.
 credentials.json
 google-services.json
 GoogleService-Info.plist
 *.keystore
 *.jks
+*.p8
+*.p12
+*.pem
+keystore.properties
 secrets.json
+secrets.properties
+
+# Machine-specific: holds an absolute SDK path.
+local.properties
+
+# Build output
+coverage/
+*.apk
+*.aab
+
+# Crash debris from MSYS/Cygwin tooling on Windows.
+*.stackdump
+Thumbs.db
 
 # typescript
 *.tsbuildinfo

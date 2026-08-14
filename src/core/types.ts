@@ -40,11 +40,17 @@ export type SearchResult = {
 /**
  * A show the user follows. This is the persisted shape.
  *
- * `acknowledgedSeason` is the crux of the whole app: it records the highest
- * season number the user has already seen us report. A show is "new" precisely
- * when a season has aired above that watermark. It is initialised on add to the
- * latest already-aired season, so adding a 9-season show doesn't announce
- * seasons 1-9 as news.
+ * Two separate watermarks, deliberately not merged, because they answer
+ * different questions:
+ *
+ * - `watchedThroughSeason` is the user's own progress, and drives how far
+ *   behind they are.
+ * - `knownAiredSeason` is what the app has already told them about, and only
+ *   stops the same season being announced twice.
+ *
+ * Collapsing them would mean dismissing a notification silently claimed you
+ * had watched the season, or that marking a season watched suppressed the
+ * alert for the next one.
  */
 export type TrackedShow = {
   id: number;
@@ -55,14 +61,28 @@ export type TrackedShow = {
   seasons: Season[];
   lastEpisode: EpisodeRef | null;
   nextEpisode: EpisodeRef | null;
-  acknowledgedSeason: number;
+  /**
+   * The highest season the user says they have finished. 0 means not started.
+   * Anything aired above this is backlog.
+   */
+  watchedThroughSeason: number;
+  /**
+   * The latest aired season number as observed at the last check.
+   *
+   * Recorded rather than recomputed: the stored season list is always
+   * re-evaluated against today's date, so a season TMDB listed months early
+   * would appear to have "always been aired" once its date arrives, and the
+   * moment it actually dropped would pass unnoticed.
+   */
+  knownAiredSeason: number;
   addedAt: string; // ISO timestamp
   lastCheckedAt: string | null; // ISO timestamp
 };
 
 /** How a tracked show should be presented, derived fresh from its data. */
 export type ShowState =
-  | { kind: 'new_season'; season: Season; daysAgo: number }
+  /** Aired seasons the user has not watched. `seasonsBehind` is at least 1. */
+  | { kind: 'behind'; latest: Season; seasonsBehind: number; daysAgo: number }
   | { kind: 'airing'; next: EpisodeRef; daysUntil: number }
   | { kind: 'upcoming'; season: Season; daysUntil: number }
   | { kind: 'waiting' } // returning series, nothing scheduled yet

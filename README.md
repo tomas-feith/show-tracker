@@ -7,20 +7,38 @@ Built with React Native and Expo. Everything lives on the device: there is no
 server, no account, and no data leaves the phone except the show lookups it
 makes directly to TMDB.
 
+## Tracking what you have watched
+
+Open a show and tap the last season you finished. Everything aired above that is
+backlog, and the library shows how deep it goes - "Season 4 out 2 months ago" for
+one season, "3 seasons behind" for more. Tapping the same season again clears it,
+so a mis-tap is undoable. Following a show assumes you are up to date; change it
+if you are not.
+
 ## How it decides something is new
 
-Each followed show carries a watermark: the highest season number you have
-already been shown. It is set when you follow the show, so adding a nine-season
-series does not announce nine seasons of news. A season counts as new only when
-it is numbered above that watermark **and** has actually started airing, which
-means:
+Each show carries two separate watermarks, which sounds like one too many until
+you try to merge them:
+
+- `watchedThroughSeason` is your progress, and drives the backlog count.
+- `knownAiredSeason` is what the app has already notified you about, and only
+  stops the same season being announced twice.
+
+Merged into one, dismissing a notification would silently claim you had watched
+the season, and marking a season watched would suppress the alert for the next.
+
+A season counts as aired - and so as backlog - only when it has a real season
+number, a past air date, and at least one episode. All three matter:
 
 - season 0 is ignored, since TMDB files specials and recaps there;
-- a season with no air date, a future air date, or no episodes is ignored, since
-  TMDB lists announced seasons months ahead of release.
+- TMDB lists announced seasons months ahead of release, sometimes with a
+  placeholder date and no episodes.
 
-New seasons are announced once, on the refresh where they first appear. "Mark as
-seen" raises the watermark and clears the badge.
+That last point is also why `knownAiredSeason` is recorded rather than
+recomputed. The stored season list is always evaluated against today's date, so
+a season TMDB had listed early would look like it had aired all along once its
+date passed, and the moment it actually dropped would go unannounced - which is
+the entire failure this app exists to prevent. There is a regression test for it.
 
 ## Checking for updates
 
@@ -64,24 +82,36 @@ That produces a downloadable APK you can install directly on your phone.
 ## Development
 
 ```sh
-npm test        # jest, covers the season and refresh logic
+npm test        # jest, covers the season, refresh and migration logic
 npm run typecheck
 npm run lint
 ```
 
+Enable the pre-commit hook once per clone; it runs the same three checks:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+CI runs them on every push and pull request to `main`, plus `expo-doctor` to
+catch dependency drift against the Expo SDK.
+
 The logic worth testing is pure and lives in `src/core/`: `newness.ts` decides
-what counts as aired and new, `refresh.ts` folds TMDB responses into stored shows
-without trampling your watermark.
+what counts as aired and how far behind you are, `refresh.ts` folds TMDB
+responses into stored shows without trampling your progress. `migrateShows` in
+`src/storage/store.ts` is exported and tested for the same reason - the upgrade
+path runs against data an older install wrote, which normal use cannot
+reproduce.
 
 ## Layout
 
 ```
 src/
   api/tmdb.ts            TMDB client, bounded-concurrency batch fetch
-  core/newness.ts        what has aired, what is new, how to sort
+  core/newness.ts        what has aired, how far behind you are, how to sort
   core/refresh.ts        merging fresh data, deciding what to announce
   state/                 library state and persistence wiring
-  storage/store.ts       AsyncStorage reads and writes
+  storage/store.ts       AsyncStorage reads, writes and schema migration
   notifications/         background task and local notifications
   screens/               library, search, detail, settings
 ```

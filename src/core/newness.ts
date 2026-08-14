@@ -36,6 +36,16 @@ export function realSeasons(seasons: Season[]): Season[] {
 }
 
 /**
+ * Whether a single season has actually started airing: a real season number, a
+ * past air date, and at least one episode. The single definition of "aired",
+ * used everywhere so the badge, the backlog count and the notification can
+ * never disagree.
+ */
+export function hasAired(season: Season, today: string): boolean {
+  return season.seasonNumber >= 1 && season.episodeCount > 0 && hasHappened(season.airDate, today);
+}
+
+/**
  * The highest-numbered season that has actually started airing.
  *
  * TMDB routinely lists a future season months before release (sometimes with a
@@ -45,9 +55,7 @@ export function realSeasons(seasons: Season[]): Season[] {
  * occasionally carry a past air date.
  */
 export function latestAiredSeason(seasons: Season[], today: string): Season | null {
-  const aired = realSeasons(seasons).filter(
-    (s) => s.episodeCount > 0 && hasHappened(s.airDate, today)
-  );
+  const aired = seasons.filter((s) => hasAired(s, today));
   if (aired.length === 0) return null;
   return aired.reduce((best, s) => (s.seasonNumber > best.seasonNumber ? s : best));
 }
@@ -69,24 +77,37 @@ export function initialWatermark(seasons: Season[], today: string): number {
   return latestAiredSeason(seasons, today)?.seasonNumber ?? 0;
 }
 
-/** True when a season has aired above the user's acknowledged watermark. */
-export function hasNewSeason(show: TrackedShow, today: string): boolean {
-  const latest = latestAiredSeason(show.seasons, today);
-  return latest !== null && latest.seasonNumber > show.acknowledgedSeason;
+/**
+ * How many aired seasons the user has not watched.
+ *
+ * Counts only seasons that actually exist and have aired, so a watermark left
+ * behind by a show that later removed a season cannot report a negative or
+ * inflated backlog.
+ */
+export function seasonsBehind(show: TrackedShow, today: string): number {
+  return show.seasons.filter(
+    (s) => hasAired(s, today) && s.seasonNumber > show.watchedThroughSeason
+  ).length;
+}
+
+/** True when there is at least one aired season the user has not watched. */
+export function isBehind(show: TrackedShow, today: string): boolean {
+  return seasonsBehind(show, today) > 0;
 }
 
 /**
- * Derive how a show should be presented. Precedence is deliberate: an unseen
- * new season outranks everything, since that is the situation the app exists
- * to catch.
+ * Derive how a show should be presented. Precedence is deliberate: an unwatched
+ * aired season outranks everything, since catching up is the point of the app.
  */
 export function showState(show: TrackedShow, today: string): ShowState {
   const latest = latestAiredSeason(show.seasons, today);
+  const behind = seasonsBehind(show, today);
 
-  if (latest && latest.seasonNumber > show.acknowledgedSeason) {
+  if (latest && behind > 0) {
     return {
-      kind: 'new_season',
-      season: latest,
+      kind: 'behind',
+      latest,
+      seasonsBehind: behind,
       daysAgo: latest.airDate ? daysBetween(latest.airDate, today) : 0,
     };
   }
@@ -114,7 +135,7 @@ export function showState(show: TrackedShow, today: string): ShowState {
 
 /** Sort weight per state: lower sorts first. */
 const STATE_ORDER: Record<ShowState['kind'], number> = {
-  new_season: 0,
+  behind: 0,
   airing: 1,
   upcoming: 2,
   waiting: 3,
@@ -133,8 +154,10 @@ export function sortLibrary(shows: TrackedShow[], today: string): TrackedShow[] 
     const byKind = STATE_ORDER[sa.kind] - STATE_ORDER[sb.kind];
     if (byKind !== 0) return byKind;
 
-    if (sa.kind === 'new_season' && sb.kind === 'new_season') {
+    if (sa.kind === 'behind' && sb.kind === 'behind') {
+      // Most recent drop first; a deeper backlog breaks a same-day tie.
       if (sa.daysAgo !== sb.daysAgo) return sa.daysAgo - sb.daysAgo;
+      if (sa.seasonsBehind !== sb.seasonsBehind) return sb.seasonsBehind - sa.seasonsBehind;
     }
     if (sa.kind === 'airing' && sb.kind === 'airing') {
       if (sa.daysUntil !== sb.daysUntil) return sa.daysUntil - sb.daysUntil;
