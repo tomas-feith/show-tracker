@@ -66,8 +66,11 @@ a v4 read access token works.
 The key is validated before it is stored, and it is kept in the device's own
 storage. It is never written into this repository.
 
-Background checks and notifications do not work under Expo Go; they need a
-development build or a real APK.
+Expo Go removed the notification native module in SDK 53, so under Expo Go the
+app runs and refreshes normally but cannot post notifications or run background
+checks, and Settings says so. Both modules are loaded lazily for this reason - a
+plain top-level import of `expo-notifications` crashes Expo Go on launch, before
+the first render. For the real behaviour, build the APK below.
 
 ## Building an installable APK
 

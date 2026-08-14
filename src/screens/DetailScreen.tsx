@@ -21,6 +21,7 @@ import {
   showState,
   todayISO,
 } from '../core/newness';
+import { mergeShow } from '../core/refresh';
 import type { ShowDetail, TrackedShow } from '../core/types';
 import type { RootStackParamList } from '../navigation/types';
 import { useLibrary } from '../state/LibraryContext';
@@ -46,8 +47,7 @@ export function DetailScreen({ route, navigation }: Props) {
   const today = todayISO();
 
   const tracked = shows.find((s) => s.id === id) ?? null;
-  const [preview, setPreview] = useState<TrackedShow | null>(null);
-  const [overview, setOverview] = useState<string>('');
+  const [fresh, setFresh] = useState<ShowDetail | null>(null);
   const [loading, setLoading] = useState(!tracked);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,10 +64,14 @@ export function DetailScreen({ route, navigation }: Props) {
       try {
         const detail = await fetchShow(apiKey, id);
         if (cancelled) return;
-        setOverview(detail.overview);
-        setPreview(asPreview(detail));
+        setFresh(detail);
+        setError(null);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load show.');
+        // A tracked show already has everything but the overview, so a failed
+        // background fetch is not worth an error banner over a usable screen.
+        if (!cancelled && !tracked) {
+          setError(err instanceof Error ? err.message : 'Could not load show.');
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -75,9 +79,21 @@ export function DetailScreen({ route, navigation }: Props) {
     return () => {
       cancelled = true;
     };
+    // `tracked` is read only to decide whether to surface an error, and
+    // re-running on every library change would refetch on each tap.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, apiKey]);
 
-  const show = tracked ?? preview;
+  const overview = fresh?.overview ?? '';
+
+  // Prefer the fetch we just made, folded onto the user's own progress. Showing
+  // `tracked` as-is would display a stale season list while fresher data sat
+  // unused in memory.
+  const show: TrackedShow | null = fresh
+    ? tracked
+      ? mergeShow(tracked, fresh)
+      : asPreview(fresh)
+    : tracked;
 
   useEffect(() => {
     if (show) navigation.setOptions({ title: show.name });

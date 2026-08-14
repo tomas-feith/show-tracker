@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { verifyKey } from '../api/tmdb';
 import type { RootStackParamList } from '../navigation/types';
-import { ensureNotificationPermission } from '../notifications/notify';
+import { ensureNotificationPermission, notificationsSupported } from '../notifications/notify';
 import { useLibrary } from '../state/LibraryContext';
 import { colors, radius, spacing } from '../theme';
 
@@ -102,14 +102,24 @@ export function SettingsScreen({ navigation }: Props) {
       <View style={styles.divider} />
 
       <Text style={styles.sectionTitle}>Notifications</Text>
-      <Text style={styles.body}>
-        The app checks for new seasons roughly twice a day in the background and again whenever you
-        open it. Android decides exactly when background checks run, so treat them as a bonus rather
-        than a guarantee.
-      </Text>
-      <Pressable style={styles.secondaryBtn} onPress={() => void ensureNotificationPermission()}>
-        <Text style={styles.secondaryText}>Grant notification permission</Text>
-      </Pressable>
+      {notificationsSupported ? (
+        <>
+          <Text style={styles.body}>
+            The app checks for new seasons roughly twice a day in the background and again whenever
+            you open it. Android decides exactly when background checks run, so treat them as a
+            bonus rather than a guarantee.
+          </Text>
+          <Pressable style={styles.secondaryBtn} onPress={() => void ensureNotificationPermission()}>
+            <Text style={styles.secondaryText}>Grant notification permission</Text>
+          </Pressable>
+        </>
+      ) : (
+        <Text style={styles.body}>
+          Running under Expo Go, which cannot post notifications or run background checks. The
+          library still refreshes every time you open the app. Install a development build or the
+          APK for the full behaviour.
+        </Text>
+      )}
 
       <View style={styles.divider} />
       <Text style={styles.faint}>Following {shows.length} show{shows.length === 1 ? '' : 's'}.</Text>
