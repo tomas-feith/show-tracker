@@ -7,11 +7,9 @@ Native Kotlin and Jetpack Compose. Everything lives on the device: there is no
 server, no account, and no data leaves the phone except the show lookups it
 makes directly to TMDB.
 
-> **Port in progress.** This app was originally React Native + Expo. It is being
-> rebuilt in Kotlin to match the sibling `habit_tracker`; see `CLAUDE.md` for the
-> reasoning and the phase plan. The React Native version is tagged `rn-final`,
-> and the sections below describing behaviour still document the intended
-> product - not all of it has been rebuilt yet.
+> **Ported from React Native.** This app was Expo until 2026-08-15; see
+> `CLAUDE.md` for why it moved. The React Native version is tagged `rn-final`,
+> and `docs/INSTALLING.md` covers moving a library across.
 
 ## Tracking what you have watched
 
@@ -88,13 +86,12 @@ git config core.hooksPath .githooks
 
 CI runs all of the above on every push and pull request to `main`.
 
-## Moving a library across the port
+## Backing up and restoring
 
-The React Native build, tagged `rn-final`, has Settings, then **Export library**,
-which writes a versioned JSON file and hands it to the share sheet: every show
-followed, both watermarks per show, and the last check timestamp. A library
-lives only inside its own app's storage, so that file is the only way across -
-this app cannot read the old one's data, and an uninstall takes it with it.
+A library lives only inside its own app's storage. An export is a versioned JSON
+file holding every show followed, both watermarks per show, and the last check
+timestamp - and it is the only way a library moves between installs, including
+across the port from the React Native build tagged `rn-final`.
 
 ```json
 { "format": "showtracker-export", "version": 1,
@@ -105,17 +102,29 @@ The TMDB key is deliberately **not** in the file. It is a credential and the
 export is designed to leave the device; pasting the key again afterwards takes
 seconds.
 
-`format` and `version` are stamped so the importer can refuse a file it does not
-understand rather than half-loading it. The importer is not built yet; it lands
-with the data layer.
+`format` and `version` are stamped so the importer refuses a file it does not
+understand rather than half-loading it.
+
+This app both reads and writes that format, from Settings, then **Your data**.
+Import replaces the whole library and asks first. Export is how a backup leaves
+the phone now that the React Native build is gone - the library lives only in
+this app's own storage, so an uninstall takes it with it.
 
 ## Layout
 
 ```
 app/src/main/java/com/showtracker/app/
-  ui/theme/       the single dark palette, ported from the old theme.ts
-  MainActivity.kt placeholder until the library screen lands
+  domain/      what has aired, how far behind you are, what to announce
+  data/        Room entities and DAO, settings, the export format
+  network/     TMDB client, bounded-concurrency batch fetch
+  notify/      the periodic worker and its notification
+  ui/          library, search, detail, settings
 ```
+
+The logic worth testing is pure and lives in `domain/`. `Newness.kt` decides what
+counts as aired and how far behind you are; `Refresh.kt` folds TMDB responses
+into stored shows without trampling your progress. Both came across from the
+React Native build with their test suites intact.
 
 Data from [TMDB](https://www.themoviedb.org/). This product uses the TMDB API but
 is not endorsed or certified by TMDB.

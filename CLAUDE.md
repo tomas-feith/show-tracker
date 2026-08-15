@@ -21,9 +21,10 @@ default for Android work here; see the global `~/.claude/CLAUDE.md`.
 The React Native version is tagged **`rn-final`** and is still the build running
 on the phone. Recover it with `git checkout rn-final` if a reference is needed.
 
-Phases: 0 export (done, in `rn-final`), 1 skeleton (done), 2 domain + Room and
-the importer, 3 TMDB client, 4 Compose UI, 5 WorkManager + notifications,
-6 import UI and cutover.
+Phases 0-6 are all built: export (in `rn-final`), skeleton, domain + Room and
+the importer, TMDB client, Compose UI, WorkManager + notifications, and the
+import/export UI. What remains is the cutover itself, which is manual and
+described in `docs/INSTALLING.md`.
 
 The logic worth porting carefully lives in `rn-final` under `src/core/`:
 `newness.ts` decides what counts as aired, `refresh.ts` folds TMDB responses into
@@ -47,3 +48,7 @@ signing key, replacing means uninstalling first, which erases that library.
 
 At cutover the old app is uninstalled deliberately and the library restored from
 the export file. Do not uninstall it before then.
+
+The release keystore lives outside the repository and cannot be regenerated; see
+`docs/INSTALLING.md`. Always print an APK's signer and compare it before
+installing over anything holding real data.

@@ -31,7 +31,7 @@ private val json =
     }
 
 @Serializable
-private data class ExportPayload(
+internal data class ExportEnvelope(
     val format: String? = null,
     val version: Int = 0,
     val exportedAt: String? = null,
@@ -40,7 +40,7 @@ private data class ExportPayload(
 )
 
 @Serializable
-private data class ShowPayload(
+internal data class ShowPayload(
     val id: Int,
     val name: String,
     val posterPath: String? = null,
@@ -63,7 +63,7 @@ private data class ShowPayload(
 )
 
 @Serializable
-private data class SeasonPayload(
+internal data class SeasonPayload(
     val seasonNumber: Int,
     val name: String = "",
     val airDate: String? = null,
@@ -71,7 +71,7 @@ private data class SeasonPayload(
 )
 
 @Serializable
-private data class EpisodePayload(
+internal data class EpisodePayload(
     val seasonNumber: Int,
     val episodeNumber: Int,
     val name: String = "",
@@ -101,7 +101,7 @@ sealed interface ImportResult {
 @Suppress("ReturnCount")
 fun parseExport(text: String): ImportResult {
     val payload =
-        runCatching { json.decodeFromString<ExportPayload>(text) }.getOrNull()
+        runCatching { json.decodeFromString<ExportEnvelope>(text) }.getOrNull()
             ?: return ImportResult.Failure("That file is not readable as Show Tracker data.")
 
     if (payload.format != EXPORT_FORMAT) {
@@ -131,7 +131,7 @@ fun parseExport(text: String): ImportResult {
     return ImportResult.Success(shows, payload.lastCheckedAt)
 }
 
-private fun ShowPayload.toDomain(): TrackedShow =
+internal fun ShowPayload.toDomain(): TrackedShow =
     TrackedShow(
         id = id,
         name = name,
@@ -149,5 +149,37 @@ private fun ShowPayload.toDomain(): TrackedShow =
         lastCheckedAt = lastCheckedAt,
     )
 
-private fun EpisodePayload.toDomain(): EpisodeRef =
+internal fun EpisodePayload.toDomain(): EpisodeRef =
     EpisodeRef(seasonNumber, episodeNumber, name, airDate)
+
+// --- encode side ---
+
+internal fun TrackedShow.toPayload(): ShowPayload =
+    ShowPayload(
+        id = id,
+        name = name,
+        posterPath = posterPath,
+        firstAirDate = firstAirDate,
+        status = status,
+        seasons =
+            seasons.map {
+                SeasonPayload(
+                    it.seasonNumber,
+                    it.name,
+                    it.airDate,
+                    it.episodeCount,
+                )
+            },
+        lastEpisode = lastEpisode?.toPayload(),
+        nextEpisode = nextEpisode?.toPayload(),
+        watchedThroughSeason = watchedThroughSeason,
+        knownAiredSeason = knownAiredSeason,
+        // Never written. It exists only so a file from a pre-split install can still be
+        // read; writing it back would resurrect a shape this app stopped using.
+        legacyWatermark = null,
+        addedAt = addedAt,
+        lastCheckedAt = lastCheckedAt,
+    )
+
+private fun EpisodeRef.toPayload(): EpisodePayload =
+    EpisodePayload(seasonNumber, episodeNumber, name, airDate)

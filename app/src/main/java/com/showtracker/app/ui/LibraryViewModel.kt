@@ -4,8 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.showtracker.app.AppContainer
+import com.showtracker.app.data.ImportResult
 import com.showtracker.app.data.LibraryRepository
 import com.showtracker.app.data.Settings
+import com.showtracker.app.data.buildExport
+import com.showtracker.app.data.parseExport
 import com.showtracker.app.domain.ShowFetcher
 import com.showtracker.app.domain.TrackedShow
 import com.showtracker.app.domain.initialWatermark
@@ -173,6 +176,27 @@ class LibraryViewModel(
             val latest = latestAiredSeason(show.seasons, LocalDate.now()) ?: return@launch
             library.setWatchedThrough(id, latest.seasonNumber)
         }
+    }
+
+    /** The current library as a transfer file. */
+    suspend fun exportJson(): String =
+        buildExport(library.all(), state.value.lastCheckedAt, Instant.now())
+
+    /**
+     * Replace the library from an export file.
+     *
+     * Replace rather than merge: an import is a restore, and merging would have to invent
+     * an answer for a show present in both with different watermarks. The file is the
+     * user's own most recent state, so it wins outright - which is also why the UI confirms
+     * before calling this.
+     */
+    suspend fun importJson(text: String): ImportResult {
+        val result = parseExport(text)
+        if (result is ImportResult.Success) {
+            library.replaceWith(result.shows)
+            result.lastCheckedAt?.let { settings.setLastCheckedAt(it) }
+        }
+        return result
     }
 
     suspend fun saveApiKey(key: String) {

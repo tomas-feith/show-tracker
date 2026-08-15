@@ -172,6 +172,8 @@ fun SettingsScreen(
 
             Notifications()
 
+            DataSection(viewModel)
+
             Text(
                 "Following ${state.shows.size} " +
                     if (state.shows.size == 1) "show." else "shows.",
