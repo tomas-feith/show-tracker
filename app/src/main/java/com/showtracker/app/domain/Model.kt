@@ -1,0 +1,146 @@
+package com.showtracker.app.domain
+
+import java.time.LocalDate
+
+/**
+ * Dates arrive from TMDB, and leave in an export, as `YYYY-MM-DD` strings, so that is how
+ * they are stored. They are parsed to [LocalDate] only where arithmetic happens, which
+ * keeps the persisted and exported shapes identical to what the React Native build wrote
+ * and lets an export move between the two without a translation layer.
+ */
+private val ISO_DATE = Regex("""\d{4}-\d{2}-\d{2}""")
+
+/**
+ * Parse a stored date, treating anything unusable as absent.
+ *
+ * TMDB returns `""` rather than null for some missing dates, and occasionally a
+ * syntactically valid but impossible one. Both mean "not scheduled", which is exactly how
+ * a null is already treated everywhere downstream, so neither is worth an exception.
+ */
+fun parseIsoDate(value: String?): LocalDate? {
+    if (value == null || !ISO_DATE.matches(value)) return null
+    return runCatching { LocalDate.parse(value) }.getOrNull()
+}
+
+/** A single season as reported by TMDB. */
+data class Season(
+    val seasonNumber: Int,
+    val name: String,
+    /** ISO date, `YYYY-MM-DD`. Null when TMDB has announced no date. */
+    val airDate: String? = null,
+    val episodeCount: Int = 0,
+) {
+    val airDateOrNull: LocalDate? get() = parseIsoDate(airDate)
+}
+
+/** A specific episode, used for "last aired" and "next airing" markers. */
+data class EpisodeRef(
+    val seasonNumber: Int,
+    val episodeNumber: Int,
+    val name: String,
+    val airDate: String? = null,
+) {
+    val airDateOrNull: LocalDate? get() = parseIsoDate(airDate)
+}
+
+/** Full detail for a show, as fetched from TMDB. */
+data class ShowDetail(
+    val id: Int,
+    val name: String,
+    val overview: String,
+    val posterPath: String?,
+    val firstAirDate: String?,
+    /** TMDB production status, e.g. "Returning Series", "Ended", "Canceled". */
+    val status: String,
+    val seasons: List<Season>,
+    val lastEpisode: EpisodeRef?,
+    val nextEpisode: EpisodeRef?,
+)
+
+/** A search hit, which carries less data than a full detail fetch. */
+data class SearchResult(
+    val id: Int,
+    val name: String,
+    val overview: String,
+    val posterPath: String?,
+    val firstAirDate: String?,
+)
+
+/**
+ * A show the user follows. This is the persisted shape.
+ *
+ * Two separate watermarks, deliberately not merged, because they answer different
+ * questions:
+ *
+ * - [watchedThroughSeason] is the user's own progress, and drives how far behind they are.
+ * - [knownAiredSeason] is what the app has already told them about, and only stops the
+ *   same season being announced twice.
+ *
+ * Collapsing them would mean dismissing a notification silently claimed you had watched
+ * the season, or that marking a season watched suppressed the alert for the next one.
+ */
+data class TrackedShow(
+    val id: Int,
+    val name: String,
+    val posterPath: String? = null,
+    val firstAirDate: String? = null,
+    val status: String = "",
+    val seasons: List<Season> = emptyList(),
+    val lastEpisode: EpisodeRef? = null,
+    val nextEpisode: EpisodeRef? = null,
+    /**
+     * The highest season the user says they have finished. 0 means not started. Anything
+     * aired above this is backlog.
+     */
+    val watchedThroughSeason: Int = 0,
+    /**
+     * The latest aired season number as observed at the last check.
+     *
+     * Recorded rather than recomputed: the stored season list is always re-evaluated
+     * against today's date, so a season TMDB listed months early would appear to have
+     * "always been aired" once its date arrives, and the moment it actually dropped would
+     * pass unnoticed.
+     */
+    val knownAiredSeason: Int = 0,
+    /** ISO timestamp. */
+    val addedAt: String = "",
+    /** ISO timestamp, null until the first refresh completes. */
+    val lastCheckedAt: String? = null,
+)
+
+/** A season that appeared between two refreshes and is above the watermark. */
+data class Discovery(
+    val show: TrackedShow,
+    val season: Season,
+)
+
+/**
+ * How a tracked show should be presented, derived fresh from its data.
+ *
+ * A sealed hierarchy rather than the TypeScript discriminated union it replaces: the
+ * compiler now enforces that every `when` handles every case, so adding a state cannot
+ * silently fall through a branch somewhere.
+ */
+sealed interface ShowState {
+    /** Aired seasons the user has not watched. [seasonsBehind] is at least 1. */
+    data class Behind(
+        val latest: Season,
+        val seasonsBehind: Int,
+        val daysAgo: Int,
+    ) : ShowState
+
+    data class Airing(
+        val next: EpisodeRef,
+        val daysUntil: Int,
+    ) : ShowState
+
+    data class Upcoming(
+        val season: Season,
+        val daysUntil: Int,
+    ) : ShowState
+
+    /** A returning series with nothing scheduled yet. */
+    data object Waiting : ShowState
+
+    data object Ended : ShowState
+}

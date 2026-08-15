@@ -1,0 +1,68 @@
+{
+  "format": "showtracker-export",
+  "version": 1,
+  "exportedAt": "2026-08-15T14:42:19.092Z",
+  "lastCheckedAt": "2026-08-15T14:42:15.229Z",
+  "shows": [
+    {
+      "id": 1,
+      "name": "Shōgun",
+      "posterPath": "/shogun.jpg",
+      "firstAirDate": "2024-02-27",
+      "status": "Returning Series",
+      "seasons": [
+        { "seasonNumber": 0, "name": "Specials", "airDate": "2024-03-01", "episodeCount": 3 },
+        { "seasonNumber": 1, "name": "Season 1", "airDate": "2024-02-27", "episodeCount": 10 },
+        { "seasonNumber": 2, "name": "Season 2", "airDate": null, "episodeCount": 0 }
+      ],
+      "lastEpisode": {
+        "seasonNumber": 1,
+        "episodeNumber": 10,
+        "name": "A Dream of a Dream",
+        "airDate": "2024-04-23"
+      },
+      "nextEpisode": null,
+      "watchedThroughSeason": 1,
+      "knownAiredSeason": 1,
+      "addedAt": "2026-01-05T10:00:00.000Z",
+      "lastCheckedAt": "2026-08-14T09:30:00.000Z"
+    },
+    {
+      "id": 2,
+      "name": "Glória",
+      "posterPath": null,
+      "firstAirDate": "2021-11-05",
+      "status": "Ended",
+      "seasons": [
+        { "seasonNumber": 1, "name": "Season 1", "airDate": "2021-11-05", "episodeCount": 10 }
+      ],
+      "lastEpisode": null,
+      "nextEpisode": null,
+      "watchedThroughSeason": 0,
+      "knownAiredSeason": 4,
+      "addedAt": "2026-02-01T00:00:00.000Z",
+      "lastCheckedAt": null
+    },
+    {
+      "id": 3,
+      "name": "Pre-Split Install Show",
+      "posterPath": null,
+      "firstAirDate": "2019-01-01",
+      "status": "Returning Series",
+      "seasons": [
+        { "seasonNumber": 1, "name": "Season 1", "airDate": "2019-01-01", "episodeCount": 8 }
+      ],
+      "lastEpisode": null,
+      "nextEpisode": {
+        "seasonNumber": 2,
+        "episodeNumber": 1,
+        "name": "Return",
+        "airDate": "2026-12-01"
+      },
+      "acknowledgedSeason": 3,
+      "addedAt": "2025-01-01T00:00:00.000Z",
+      "lastCheckedAt": null,
+      "somethingAFutureWriterAdded": "ignored"
+    }
+  ]
+}
