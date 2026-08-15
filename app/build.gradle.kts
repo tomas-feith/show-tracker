@@ -150,6 +150,12 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.datastore.preferences)
+
+    // Poster loading, with its own memory and disk cache. Shares the app's OkHttp client
+    // so there is one connection pool rather than two.
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
 
     // Plain OkHttp rather than Retrofit: this app calls three TMDB endpoints, and a
     // declarative interface plus a converter artifact would be more machinery than the

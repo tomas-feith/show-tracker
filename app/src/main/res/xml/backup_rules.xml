@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 11 and below.
+
+    Once anything is listed with <include>, everything not listed is excluded. So this is an
+    allow-list, and the settings store - which holds the TMDB API key - is left out on
+    purpose rather than with an <exclude> rule. An explicit <exclude> for a path outside
+    every included path is a no-op, and Android Lint rejects it as one.
+
+    What travels is the library: the shows followed and, more importantly, the
+    watched-through progress, which is the one thing that cannot be refetched from TMDB.
+    A credential is worth keeping on the phone it was given to; re-pasting it after a
+    restore takes seconds.
+-->
+<full-backup-content>
+    <include domain="database" path="shows.db" />
+    <include domain="database" path="shows.db-wal" />
+    <include domain="database" path="shows.db-shm" />
+</full-backup-content>

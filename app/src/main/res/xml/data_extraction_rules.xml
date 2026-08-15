@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 12 and above. Same allow-list policy as backup_rules.xml: the library travels,
+    the API key does not, by not being listed.
+
+    device-transfer is spelled out separately from cloud-backup even though the two lists
+    are identical. A direct phone-to-phone transfer never leaves the user's hands whereas a
+    cloud backup does, so the day those policies should differ, the structure is already
+    there and the change has to be deliberate.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="database" path="shows.db" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="database" path="shows.db" />
+    </device-transfer>
+</data-extraction-rules>
