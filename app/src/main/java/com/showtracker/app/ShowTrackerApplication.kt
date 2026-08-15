@@ -10,6 +10,8 @@ import com.showtracker.app.data.LibraryRepository
 import com.showtracker.app.data.Settings
 import com.showtracker.app.data.ShowDatabase
 import com.showtracker.app.network.TmdbClient
+import com.showtracker.app.notify.RefreshWorker
+import com.showtracker.app.notify.ensureChannel
 import okhttp3.OkHttpClient
 
 /**
@@ -42,6 +44,12 @@ class ShowTrackerApplication :
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+
+        // The channel has to exist before anything posts to it, and creating it here rather
+        // than at post time means it appears in system settings straight away, so the user
+        // can silence it before the first notification rather than after.
+        ensureChannel(this)
+        RefreshWorker.schedule(this)
     }
 
     /**

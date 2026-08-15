@@ -152,6 +152,10 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.datastore.preferences)
 
+    // The periodic season check. Expo's background-task module was WorkManager
+    // underneath, so this is the same mechanism without the wrapper.
+    implementation(libs.androidx.work.runtime.ktx)
+
     // Poster loading, with its own memory and disk cache. Shares the app's OkHttp client
     // so there is one connection pool rather than two.
     implementation(libs.coil.compose)

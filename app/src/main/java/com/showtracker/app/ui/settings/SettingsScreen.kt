@@ -1,6 +1,9 @@
 package com.showtracker.app.ui.settings
 
+import android.Manifest
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -37,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.showtracker.app.notify.canPostNotifications
+import com.showtracker.app.notify.notificationPermissionIsRuntime
 import com.showtracker.app.ui.LibraryViewModel
 import com.showtracker.app.ui.catchingUserFacing
 import com.showtracker.app.ui.theme.Accent
@@ -165,6 +170,8 @@ fun SettingsScreen(
                 }
             }
 
+            Notifications()
+
             Text(
                 "Following ${state.shows.size} " +
                     if (state.shows.size == 1) "show." else "shows.",
@@ -203,4 +210,51 @@ private fun KeyHelp(
         style = MaterialTheme.typography.bodySmall,
         color = if (connected) StateAiring else Danger,
     )
+}
+
+/**
+ * Notification permission.
+ *
+ * Requested from a button rather than on first launch: the prompt means something once the
+ * user knows the app is about announcing new seasons, and Android only ever shows it twice
+ * before going permanently silent, so spending one on a cold start is wasteful.
+ */
+@Composable
+private fun Notifications() {
+    val context = LocalContext.current
+    var granted by remember { mutableStateOf(canPostNotifications(context)) }
+
+    val launcher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+            granted = it
+        }
+
+    Text(
+        "Notifications",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onBackground,
+    )
+    Text(
+        "The app checks for new seasons roughly twice a day in the background, and again " +
+            "whenever you open it. Android decides exactly when background checks run, so " +
+            "treat them as a bonus rather than a guarantee.",
+        style = MaterialTheme.typography.bodySmall,
+        color = TextMuted,
+    )
+
+    if (granted || !notificationPermissionIsRuntime()) {
+        Text(
+            "Status: allowed",
+            style = MaterialTheme.typography.bodySmall,
+            color = StateAiring,
+        )
+    } else {
+        OutlinedButton(
+            onClick = { launcher.launch(Manifest.permission.POST_NOTIFICATIONS) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Allow notifications", color = TextMuted)
+        }
+    }
 }
