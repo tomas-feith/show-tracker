@@ -55,3 +55,59 @@ fun findDiscovery(
 
     return next
 }
+
+/**
+ * Fetches detail for many shows at once.
+ *
+ * An interface rather than the client itself, so the refresh below stays a pure function
+ * over data and can be tested - including its failure handling - without a network or a
+ * fake HTTP server.
+ */
+fun interface ShowFetcher {
+    suspend fun fetch(ids: List<Int>): Map<Int, Result<ShowDetail>>
+}
+
+data class RefreshOutcome(
+    val shows: List<TrackedShow>,
+    /** Shows whose latest aired season rose during this refresh. */
+    val discoveries: List<Discovery>,
+    /** Shows that could not be refreshed, keyed by id, with the failure reason. */
+    val failures: Map<Int, Throwable>,
+)
+
+/**
+ * Refresh every tracked show against TMDB.
+ *
+ * Shows that fail to fetch keep their previous data rather than being dropped, so a flaky
+ * connection degrades the library's freshness but never its contents.
+ */
+suspend fun refreshShows(
+    fetcher: ShowFetcher,
+    shows: List<TrackedShow>,
+    now: Instant = Instant.now(),
+    today: LocalDate = LocalDate.now(),
+): RefreshOutcome {
+    if (shows.isEmpty()) return RefreshOutcome(shows, emptyList(), emptyMap())
+
+    val fetched = fetcher.fetch(shows.map { it.id })
+
+    val failures = mutableMapOf<Int, Throwable>()
+    val discoveries = mutableListOf<Discovery>()
+
+    val updated =
+        shows.map { show ->
+            val result = fetched[show.id]
+            val detail = result?.getOrNull()
+
+            if (detail == null) {
+                result?.exceptionOrNull()?.let { failures[show.id] = it }
+                return@map show
+            }
+
+            val merged = mergeShow(show, detail, now, today)
+            findDiscovery(show, merged, today)?.let { discoveries += Discovery(merged, it) }
+            merged
+        }
+
+    return RefreshOutcome(updated, discoveries, failures)
+}

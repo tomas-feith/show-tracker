@@ -149,6 +149,13 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
+    implementation(libs.kotlinx.coroutines.android)
+
+    // Plain OkHttp rather than Retrofit: this app calls three TMDB endpoints, and a
+    // declarative interface plus a converter artifact would be more machinery than the
+    // hand-written mapping it replaces.
+    implementation(libs.okhttp)
+
     // Reads the versioned JSON an export produces. Pinned through the BOM so the core and
     // json artifacts cannot drift apart, which surfaces only at runtime.
     implementation(platform(libs.kotlinx.serialization.bom))
@@ -157,6 +164,10 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    // Exercises the TMDB wire mapping and error handling over a real socket, without a
+    // network or a live API key.
+    testImplementation(libs.okhttp.mockwebserver)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     // Replays committed schema JSONs so migrations are verified, not assumed.
