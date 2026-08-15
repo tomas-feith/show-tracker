@@ -112,6 +112,17 @@ android {
     }
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+// The migration test replays the committed schema JSONs, so they have to be on the
+// instrumentation test classpath as assets.
+android.sourceSets
+    .getByName("androidTest")
+    .assets
+    .srcDir("$projectDir/schemas")
+
 // AGP 9 dropped the `kotlinOptions` block in favour of the Kotlin plugin's own DSL.
 kotlin {
     compilerOptions {
@@ -134,6 +145,10 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
 
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+
     // Reads the versioned JSON an export produces. Pinned through the BOM so the core and
     // json artifacts cannot drift apart, which surfaces only at runtime.
     implementation(platform(libs.kotlinx.serialization.bom))
@@ -144,6 +159,11 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    // Replays committed schema JSONs so migrations are verified, not assumed.
+    androidTestImplementation(libs.androidx.room.testing)
+    // Room's MigrationTestHelper parses those JSONs with kotlinx-serialization, and a
+    // core/json version mismatch surfaces only at runtime as AbstractMethodError.
+    androidTestImplementation(platform(libs.kotlinx.serialization.bom))
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.test.manifest)
