@@ -14,6 +14,7 @@ import { verifyKey } from '../api/tmdb';
 import type { RootStackParamList } from '../navigation/types';
 import { ensureNotificationPermission, notificationsSupported } from '../notifications/notify';
 import { useLibrary } from '../state/LibraryContext';
+import { shareExport } from '../storage/share';
 import { colors, radius, spacing } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -21,11 +22,13 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 const SIGNUP_URL = 'https://www.themoviedb.org/settings/api';
 
 export function SettingsScreen({ navigation }: Props) {
-  const { apiKey, setApiKey, forgetApiKey, shows } = useLibrary();
+  const { apiKey, setApiKey, forgetApiKey, shows, lastCheck } = useLibrary();
   const [draft, setDraft] = useState('');
   const [checking, setChecking] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   async function onSave() {
     const key = draft.trim();
@@ -48,6 +51,18 @@ export function SettingsScreen({ navigation }: Props) {
       setMessage(err instanceof Error ? err.message : 'Could not verify key.');
     } finally {
       setChecking(false);
+    }
+  }
+
+  async function onExport() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await shareExport(shows, lastCheck);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Export failed.');
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -120,6 +135,35 @@ export function SettingsScreen({ navigation }: Props) {
           APK for the full behaviour.
         </Text>
       )}
+
+      <View style={styles.divider} />
+
+      <Text style={styles.sectionTitle}>Your data</Text>
+      <Text style={styles.body}>
+        Save your library to a JSON file: every show you follow, how far through each one you are,
+        and when it was last checked. Your TMDB key is not included, since an exported file is
+        meant to leave the phone.
+      </Text>
+      <Text style={styles.body}>
+        Keep the file somewhere off the device, such as Drive. It is the only copy of your library
+        if the app is ever uninstalled.
+      </Text>
+
+      <Pressable
+        style={styles.secondaryBtn}
+        disabled={exporting || shows.length === 0}
+        onPress={() => void onExport()}
+      >
+        {exporting ? (
+          <ActivityIndicator size="small" color={colors.textMuted} />
+        ) : (
+          <Text style={[styles.secondaryText, shows.length === 0 && { color: colors.textFaint }]}>
+            {shows.length === 0 ? 'Nothing to export yet' : 'Export library'}
+          </Text>
+        )}
+      </Pressable>
+
+      {exportError && <Text style={[styles.body, { color: colors.danger }]}>{exportError}</Text>}
 
       <View style={styles.divider} />
       <Text style={styles.faint}>Following {shows.length} show{shows.length === 1 ? '' : 's'}.</Text>

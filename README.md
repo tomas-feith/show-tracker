@@ -106,6 +106,24 @@ responses into stored shows without trampling your progress. `migrateShows` in
 path runs against data an older install wrote, which normal use cannot
 reproduce.
 
+## Exporting your library
+
+Settings, then **Export library**, writes a JSON file and hands it to the share
+sheet. It contains every show you follow, both watermarks per show, and the last
+check timestamp.
+
+Save it somewhere off the phone. Everything this app knows lives in its own
+storage, so an uninstall takes the library with it, and the export is the only
+way back.
+
+Your TMDB key is deliberately **not** in the file. It is a credential and the
+export is designed to leave the device; pasting the key again afterwards takes
+seconds.
+
+The payload is versioned (`format` and `version`), so a reader can identify it
+and refuse a file it does not understand rather than importing half of it. This
+is the transfer format for the planned Kotlin port - see `AGENTS.md`.
+
 ## Layout
 
 ```
@@ -115,6 +133,8 @@ src/
   core/refresh.ts        merging fresh data, deciding what to announce
   state/                 library state and persistence wiring
   storage/store.ts       AsyncStorage reads, writes and schema migration
+  storage/export.ts      versioned export payload, pure and tested
+  storage/share.ts       writes the export file and opens the share sheet
   notifications/         background task and local notifications
   screens/               library, search, detail, settings
 ```

@@ -30,7 +30,8 @@
         {
           "color": "#4F8DF7"
         }
-      ]
+      ],
+      "expo-sharing"
     ]
   }
 }
