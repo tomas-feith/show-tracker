@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Show Tracker</string>
+    <!--
+        app_name is not here: it is declared per build type in app/build.gradle.kts, so the
+        debug build can be labelled "Show Tracker (debug)" and be told apart on the launcher
+        from the release install beside it.
+    -->
 </resources>

@@ -31,6 +31,7 @@ android {
 
     defaultConfig {
         applicationId = "com.showtracker.app"
+        resValue("string", "app_name", "Show Tracker")
         // The React Native build allowed 24. Nothing here needs to run that far back,
         // and 26 is what the sibling habit_tracker targets.
         minSdk = 26
@@ -63,6 +64,12 @@ android {
             // it, which under a different signing key would mean uninstalling first.
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+
+            // A distinct launcher label as well as a distinct id. Without it both builds
+            // appear as "Show Tracker" with the same icon, and the only way to tell which
+            // is which is to open App info and read the version - which is no help at all
+            // when the point of installing both is to compare them.
+            resValue("string", "app_name", "Show Tracker (debug)")
         }
         release {
             signingConfig = signingConfigs.findByName("release")
@@ -84,6 +91,9 @@ android {
 
     buildFeatures {
         compose = true
+        // AGP 9 turns custom resource values off by default. app_name is declared per build
+        // type so the debug install is labelled distinctly on the launcher.
+        resValues = true
     }
 
     packaging {
