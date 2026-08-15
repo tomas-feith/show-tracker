@@ -3,9 +3,15 @@
 An Android app for following TV shows and finding out when a new season actually
 lands, rather than six months later.
 
-Built with React Native and Expo. Everything lives on the device: there is no
+Native Kotlin and Jetpack Compose. Everything lives on the device: there is no
 server, no account, and no data leaves the phone except the show lookups it
 makes directly to TMDB.
+
+> **Port in progress.** This app was originally React Native + Expo. It is being
+> rebuilt in Kotlin to match the sibling `habit_tracker`; see `CLAUDE.md` for the
+> reasoning and the phase plan. The React Native version is tagged `rn-final`,
+> and the sections below describing behaviour still document the intended
+> product - not all of it has been rebuilt yet.
 
 ## Tracking what you have watched
 
@@ -51,92 +57,64 @@ the entire failure this app exists to prevent. There is a regression test for it
 
 ## Setup
 
-Requires Node 20+ and a free TMDB API key.
+Requires JDK 17, the Android SDK (`ANDROID_HOME` set), and a free TMDB API key.
 
 ```sh
-npm install
-npm start
+./gradlew assembleDebug
 ```
 
-Scan the QR code with Expo Go on your phone, then open Settings in the app and
-paste your TMDB key. Get one at <https://www.themoviedb.org/settings/api> - sign
-up, then Settings, then API, then request a Developer key. Either a v3 API key or
-a v4 read access token works.
+The debug build installs as `com.showtracker.app.debug`, deliberately a separate
+application id, so it sits alongside the React Native build still on the phone
+rather than demanding to replace it.
 
-The key is validated before it is stored, and it is kept in the device's own
-storage. It is never written into this repository.
-
-Expo Go removed the notification native module in SDK 53, so under Expo Go the
-app runs and refreshes normally but cannot post notifications or run background
-checks, and Settings says so. Both modules are loaded lazily for this reason - a
-plain top-level import of `expo-notifications` crashes Expo Go on launch, before
-the first render. For the real behaviour, build the APK below.
-
-## Building an installable APK
-
-Local builds need the Android SDK. Expo's cloud builder does not:
-
-```sh
-npx eas build --platform android --profile preview
-```
-
-That produces a downloadable APK you can install directly on your phone.
+Get a TMDB key at <https://www.themoviedb.org/settings/api> - sign up, then
+Settings, then API, then request a Developer key. Either a v3 API key or a v4
+read access token works. The key is kept in the device's own storage and is
+never written into this repository.
 
 ## Development
 
 ```sh
-npm test        # jest, covers the season, refresh and migration logic
-npm run typecheck
-npm run lint
+./gradlew staticAnalysis      # ktlint + detekt
+./gradlew testDebugUnitTest
+./gradlew lintDebug           # warnings are errors
 ```
 
-Enable the pre-commit hook once per clone; it runs the same three checks:
+Enable the pre-commit hook once per clone; it runs ktlint and detekt:
 
 ```sh
 git config core.hooksPath .githooks
 ```
 
-CI runs them on every push and pull request to `main`, plus `expo-doctor` to
-catch dependency drift against the Expo SDK.
+CI runs all of the above on every push and pull request to `main`.
 
-The logic worth testing is pure and lives in `src/core/`: `newness.ts` decides
-what counts as aired and how far behind you are, `refresh.ts` folds TMDB
-responses into stored shows without trampling your progress. `migrateShows` in
-`src/storage/store.ts` is exported and tested for the same reason - the upgrade
-path runs against data an older install wrote, which normal use cannot
-reproduce.
+## Moving a library across the port
 
-## Exporting your library
+The React Native build, tagged `rn-final`, has Settings, then **Export library**,
+which writes a versioned JSON file and hands it to the share sheet: every show
+followed, both watermarks per show, and the last check timestamp. A library
+lives only inside its own app's storage, so that file is the only way across -
+this app cannot read the old one's data, and an uninstall takes it with it.
 
-Settings, then **Export library**, writes a JSON file and hands it to the share
-sheet. It contains every show you follow, both watermarks per show, and the last
-check timestamp.
+```json
+{ "format": "showtracker-export", "version": 1,
+  "exportedAt": "...", "lastCheckedAt": "...", "shows": [ ... ] }
+```
 
-Save it somewhere off the phone. Everything this app knows lives in its own
-storage, so an uninstall takes the library with it, and the export is the only
-way back.
-
-Your TMDB key is deliberately **not** in the file. It is a credential and the
+The TMDB key is deliberately **not** in the file. It is a credential and the
 export is designed to leave the device; pasting the key again afterwards takes
 seconds.
 
-The payload is versioned (`format` and `version`), so a reader can identify it
-and refuse a file it does not understand rather than importing half of it. This
-is the transfer format for the planned Kotlin port - see `AGENTS.md`.
+`format` and `version` are stamped so the importer can refuse a file it does not
+understand rather than half-loading it. The importer is not built yet; it lands
+with the data layer.
 
 ## Layout
 
 ```
-src/
-  api/tmdb.ts            TMDB client, bounded-concurrency batch fetch
-  core/newness.ts        what has aired, how far behind you are, how to sort
-  core/refresh.ts        merging fresh data, deciding what to announce
-  state/                 library state and persistence wiring
-  storage/store.ts       AsyncStorage reads, writes and schema migration
-  storage/export.ts      versioned export payload, pure and tested
-  storage/share.ts       writes the export file and opens the share sheet
-  notifications/         background task and local notifications
-  screens/               library, search, detail, settings
+app/src/main/java/com/showtracker/app/
+  ui/theme/       the single dark palette, ported from the old theme.ts
+  MainActivity.kt placeholder until the library screen lands
 ```
 
 Data from [TMDB](https://www.themoviedb.org/). This product uses the TMDB API but

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Themed-icon variant. Android tints this itself, so every path is drawn in a single
+    flat colour and the play mark is left as a hole rather than a second fill.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M38,24 L54,40 M70,24 L54,40"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round" />
+
+    <path
+        android:pathData="M26,40 L82,40 A6,6 0 0,1 88,46 L88,76 A6,6 0 0,1 82,82 L26,82 A6,6 0 0,1 20,76 L20,46 A6,6 0 0,1 26,40 Z M48,52 L48,70 L66,61 Z"
+        android:fillColor="#FFFFFF"
+        android:fillType="evenOdd" />
+</vector>

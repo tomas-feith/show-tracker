@@ -1,32 +1,19 @@
 version: 2
 updates:
-  - package-ecosystem: npm
+  - package-ecosystem: gradle
     directory: /
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
     groups:
-      # The Expo SDK moves as a unit; one PR beats twenty that must land together.
-      expo:
+      # AndroidX moves in lockstep often enough that one PR beats fifteen.
+      androidx:
         patterns:
-          - 'expo'
-          - 'expo-*'
-          - '@expo/*'
-      react-navigation:
+          - 'androidx.*'
+      kotlin:
         patterns:
-          - '@react-navigation/*'
-      dev-tooling:
-        patterns:
-          - 'eslint*'
-          - 'jest*'
-          - '@types/*'
-          - 'typescript'
-    ignore:
-      # React and React Native versions are dictated by the Expo SDK, so bumping
-      # them independently breaks the install rather than updating it.
-      - dependency-name: react
-      - dependency-name: react-dom
-      - dependency-name: react-native
+          - 'org.jetbrains.kotlin*'
+          - 'com.google.devtools.ksp*'
 
   - package-ecosystem: github-actions
     directory: /

@@ -1,70 +1,38 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
-# dependencies
-node_modules/
-
-# Expo
-.expo/
-dist/
-web-build/
-expo-env.d.ts
-
-# Native
+*.iml
+.gradle/
 .kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-
-# Metro
-.metro-health-check*
-
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
-.DS_Store
-*.pem
-
-# local env files
-.env
-.env.*
-!.env.example
-
-# Signing and secrets. Nothing here is ever safe to publish, and this repo is
-# public - no negated exceptions, so a stray keystore cannot be re-included.
-# The TMDB key is entered in the app and kept in device storage, never here.
-credentials.json
-google-services.json
-GoogleService-Info.plist
-*.keystore
-*.jks
-*.p8
-*.p12
-*.pem
-keystore.properties
-secrets.json
-secrets.properties
-
-# Machine-specific: holds an absolute SDK path.
-local.properties
-
-# Build output
-coverage/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
 *.apk
 *.aab
 
-# Crash debris from MSYS/Cygwin tooling on Windows.
-*.stackdump
+# Machine-specific: holds the absolute SDK path. Use ANDROID_HOME instead.
+local.properties
+
+# Signing and secrets. Nothing here is ever safe to publish, and this repo is
+# public - no negated exceptions, so a stray keystore cannot be re-included.
+*.keystore
+*.jks
+keystore.properties
+signing.properties
+secrets.properties
+*.p12
+*.pem
+.env
+.env.*
+
+# A library export carries every show being followed. It is a personal backup, not
+# repository content. See "Exporting your library" in the README.
+show-tracker-*.json
+
+.idea/
+!.idea/codeStyles/
+
+.DS_Store
 Thumbs.db
 
-# typescript
-*.tsbuildinfo
-
-# generated native folders
-/ios
-/android
+# Crash debris from MSYS/Cygwin tooling on Windows.
+*.stackdump
+core
