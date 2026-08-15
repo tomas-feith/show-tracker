@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Duration
@@ -79,9 +80,19 @@ class LibraryViewModel(
      * what actually keeps the library current for someone who opens the app.
      */
     fun refreshIfStale(now: Instant = Instant.now()) {
-        val last = state.value.lastCheckedAt?.let { runCatching { Instant.parse(it) }.getOrNull() }
-        val stale = last == null || Duration.between(last, now) > STALE_AFTER
-        if (stale) refresh()
+        viewModelScope.launch {
+            // Wait for the first real emission rather than reading `state.value`, which on a
+            // cold start is still the placeholder: not ready, no key, no timestamp. Reading
+            // it there looked stale (null timestamp) and then did nothing at all, because
+            // the key had not loaded either - so the on-open refresh silently never ran
+            // until the app had been backgrounded and resumed once.
+            val ready = state.first { it.ready }
+            if (ready.apiKey == null) return@launch
+
+            val last =
+                ready.lastCheckedAt?.let { runCatching { Instant.parse(it) }.getOrNull() }
+            if (last == null || Duration.between(last, now) > STALE_AFTER) refresh(now)
+        }
     }
 
     fun refresh(
