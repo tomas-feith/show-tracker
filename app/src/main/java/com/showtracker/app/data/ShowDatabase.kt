@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [ShowEntity::class, SeasonEntity::class],
@@ -15,12 +16,26 @@ abstract class ShowDatabase : RoomDatabase() {
     abstract fun showDao(): ShowDao
 
     companion object {
-        const val VERSION = 1
+        const val VERSION = 2
 
         const val NAME = "shows.db"
 
         /**
-         * Schema migrations, oldest first. Empty at version 1.
+         * Adds `shows.inProgressSeason`, the season the user is partway through.
+         *
+         * Nullable with no default, so every existing row becomes "nothing in progress",
+         * which is exactly what was true before the column existed. A plain `ADD COLUMN`
+         * leaves every other column, and so all of the user's progress, untouched.
+         */
+        private val MIGRATION_1_2 =
+            object : Migration(1, 2) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE shows ADD COLUMN inProgressSeason INTEGER")
+                }
+            }
+
+        /**
+         * Schema migrations, oldest first.
          *
          * Destructive fallback is deliberately never enabled. Most of what this database
          * holds could be refetched from TMDB, but `watchedThroughSeason` could not: it is
@@ -35,7 +50,7 @@ abstract class ShowDatabase : RoomDatabase() {
          * The exported schema JSONs under `app/schemas` are committed for exactly this
          * reason: they are what the migration test diffs against.
          */
-        val MIGRATIONS: List<Migration> = emptyList()
+        val MIGRATIONS: List<Migration> = listOf(MIGRATION_1_2)
 
         @Volatile
         private var instance: ShowDatabase? = null

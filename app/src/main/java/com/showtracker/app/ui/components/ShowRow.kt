@@ -91,6 +91,19 @@ private fun label(
     show: TrackedShow,
 ): StateLabel =
     when (state) {
+        is ShowState.Watching -> {
+            StateLabel(
+                text =
+                    if (state.seasonsAfter == 0) {
+                        "Watching season ${state.season.seasonNumber}"
+                    } else {
+                        "Watching season ${state.season.seasonNumber} - " +
+                            "${state.seasonsAfter} more aired"
+                    },
+                color = StateAiring,
+            )
+        }
+
         is ShowState.Behind -> {
             StateLabel(
                 text =

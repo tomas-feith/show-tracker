@@ -88,6 +88,25 @@ fun seasonsBehind(
         hasAired(it, today) && it.seasonNumber > show.watchedThroughSeason
     }
 
+/**
+ * The season the user is partway through, or null.
+ *
+ * The stored marker is a season *number*, and is validated against today's season list on
+ * every read rather than trusted: TMDB can withdraw a season, and marking one watched
+ * leaves the marker behind. Resolving it here means one definition of "in progress" that
+ * the row, the detail screen and the sort all share, and a stale marker simply stops
+ * counting instead of having to be cleaned up everywhere it might be read.
+ */
+fun seasonInProgress(
+    show: TrackedShow,
+    today: LocalDate,
+): Season? {
+    val number = show.inProgressSeason ?: return null
+    // Finished seasons are not in progress, whatever the marker still says.
+    if (number <= show.watchedThroughSeason) return null
+    return show.seasons.firstOrNull { it.seasonNumber == number && hasAired(it, today) }
+}
+
 /** True when there is at least one aired season the user has not watched. */
 fun isBehind(
     show: TrackedShow,
@@ -95,8 +114,9 @@ fun isBehind(
 ): Boolean = seasonsBehind(show, today) > 0
 
 /**
- * Derive how a show should be presented. Precedence is deliberate: an unwatched aired
- * season outranks everything, since catching up is the point of the app.
+ * Derive how a show should be presented. Precedence is deliberate: a season the user has
+ * started outranks everything, then an unwatched aired season, since resuming and catching
+ * up are the point of the app.
  */
 fun showState(
     show: TrackedShow,
@@ -104,13 +124,25 @@ fun showState(
 ): ShowState {
     val latest = latestAiredSeason(show.seasons, today)
     val behind = seasonsBehind(show, today)
+    val inProgress = seasonInProgress(show, today)
     val next = show.nextEpisode
     val nextAirs = next?.airDateOrNull
     val upcoming = nextUnairedSeason(show.seasons, today)
     val upcomingAirs = upcoming?.airDateOrNull
 
-    // Branch order is the precedence: an unwatched aired season outranks everything.
+    // Branch order is the precedence: a season already underway outranks everything, and
+    // an unwatched aired season outranks the rest.
     return when {
+        inProgress != null -> {
+            ShowState.Watching(
+                season = inProgress,
+                seasonsAfter =
+                    show.seasons.count {
+                        hasAired(it, today) && it.seasonNumber > inProgress.seasonNumber
+                    },
+            )
+        }
+
         latest != null && behind > 0 -> {
             ShowState.Behind(
                 latest = latest,
@@ -147,17 +179,18 @@ private val TERMINAL_STATUSES = setOf("Ended", "Canceled")
 private val ShowState.order: Int
     get() =
         when (this) {
-            is ShowState.Behind -> 0
-            is ShowState.Airing -> 1
-            is ShowState.Upcoming -> 2
-            ShowState.Waiting -> 3
-            ShowState.Ended -> 4
+            is ShowState.Watching -> 0
+            is ShowState.Behind -> 1
+            is ShowState.Airing -> 2
+            is ShowState.Upcoming -> 3
+            ShowState.Waiting -> 4
+            ShowState.Ended -> 5
         }
 
 /**
- * Order the library so the things demanding attention float to the top: unseen new seasons
- * first (most recent drop first), then imminent episodes, then announced seasons by
- * nearness, then everything dormant by name.
+ * Order the library so the things demanding attention float to the top: seasons already
+ * underway first, then unseen new seasons (most recent drop first), then imminent episodes,
+ * then announced seasons by nearness, then everything dormant by name.
  */
 fun sortLibrary(
     shows: List<TrackedShow>,
@@ -171,6 +204,9 @@ fun sortLibrary(
         compareBy<TrackedShow> { states.getValue(it.id).order }
             .thenBy { show ->
                 when (val state = states.getValue(show.id)) {
+                    // Nothing to rank shows in progress by but their names, below.
+                    is ShowState.Watching -> 0
+
                     // Most recent drop first.
                     is ShowState.Behind -> state.daysAgo
 

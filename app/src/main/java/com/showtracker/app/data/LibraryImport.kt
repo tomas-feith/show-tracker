@@ -10,7 +10,15 @@ import kotlinx.serialization.json.Json
 /** Identifies a payload as ours; anything else is refused rather than half-read. */
 const val EXPORT_FORMAT = "showtracker-export"
 
-/** The highest payload version this build understands. */
+/**
+ * The highest payload version this build understands.
+ *
+ * Still 1 after `inProgressSeason` was added. The version gates breaking changes, and an
+ * added optional field is not one: an older reader ignores the key and lands on "nothing in
+ * progress", which is the truth it already believed. Bumping it would have made every
+ * existing reader - including the React Native build the cutover still restores from -
+ * refuse the file outright.
+ */
 const val EXPORT_VERSION = 1
 
 /**
@@ -50,6 +58,12 @@ internal data class ShowPayload(
     val lastEpisode: EpisodePayload? = null,
     val nextEpisode: EpisodePayload? = null,
     val watchedThroughSeason: Int? = null,
+    /**
+     * The season the user is partway through. Absent in a file written before in-progress
+     * marking existed, and in one written by the React Native build, where it means the
+     * same as it does here: nothing in progress.
+     */
+    val inProgressSeason: Int? = null,
     val knownAiredSeason: Int? = null,
     /**
      * The single watermark used before watched-progress and notify-state were split.
@@ -144,6 +158,9 @@ internal fun ShowPayload.toDomain(): TrackedShow =
         // `?:` rather than a truthiness check, so a deliberate 0 ("not started") survives
         // the import instead of being replaced by the legacy value.
         watchedThroughSeason = watchedThroughSeason ?: legacyWatermark ?: 0,
+        // Null is meaningful here rather than a missing value to substitute for, so no
+        // fallback: an older file simply has nothing in progress.
+        inProgressSeason = inProgressSeason,
         knownAiredSeason = knownAiredSeason ?: legacyWatermark ?: 0,
         addedAt = addedAt,
         lastCheckedAt = lastCheckedAt,
@@ -173,6 +190,7 @@ internal fun TrackedShow.toPayload(): ShowPayload =
         lastEpisode = lastEpisode?.toPayload(),
         nextEpisode = nextEpisode?.toPayload(),
         watchedThroughSeason = watchedThroughSeason,
+        inProgressSeason = inProgressSeason,
         knownAiredSeason = knownAiredSeason,
         // Never written. It exists only so a file from a pre-split install can still be
         // read; writing it back would resurrect a shape this app stopped using.

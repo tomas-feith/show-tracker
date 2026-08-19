@@ -1,0 +1,187 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "ad2846a8ce415354734c3074b8b9ea5a",
+    "entities": [
+      {
+        "tableName": "shows",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `name` TEXT NOT NULL, `posterPath` TEXT, `firstAirDate` TEXT, `status` TEXT NOT NULL, `watchedThroughSeason` INTEGER NOT NULL, `inProgressSeason` INTEGER, `knownAiredSeason` INTEGER NOT NULL, `addedAt` TEXT NOT NULL, `lastCheckedAt` TEXT, `last_seasonNumber` INTEGER, `last_episodeNumber` INTEGER, `last_name` TEXT, `last_airDate` TEXT, `next_seasonNumber` INTEGER, `next_episodeNumber` INTEGER, `next_name` TEXT, `next_airDate` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "posterPath",
+            "columnName": "posterPath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "firstAirDate",
+            "columnName": "firstAirDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "watchedThroughSeason",
+            "columnName": "watchedThroughSeason",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inProgressSeason",
+            "columnName": "inProgressSeason",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "knownAiredSeason",
+            "columnName": "knownAiredSeason",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "addedAt",
+            "columnName": "addedAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastCheckedAt",
+            "columnName": "lastCheckedAt",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastEpisode.seasonNumber",
+            "columnName": "last_seasonNumber",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastEpisode.episodeNumber",
+            "columnName": "last_episodeNumber",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastEpisode.name",
+            "columnName": "last_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastEpisode.airDate",
+            "columnName": "last_airDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "nextEpisode.seasonNumber",
+            "columnName": "next_seasonNumber",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "nextEpisode.episodeNumber",
+            "columnName": "next_episodeNumber",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "nextEpisode.name",
+            "columnName": "next_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "nextEpisode.airDate",
+            "columnName": "next_airDate",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "seasons",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`showId` INTEGER NOT NULL, `seasonNumber` INTEGER NOT NULL, `name` TEXT NOT NULL, `airDate` TEXT, `episodeCount` INTEGER NOT NULL, PRIMARY KEY(`showId`, `seasonNumber`), FOREIGN KEY(`showId`) REFERENCES `shows`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "showId",
+            "columnName": "showId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "seasonNumber",
+            "columnName": "seasonNumber",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "airDate",
+            "columnName": "airDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "episodeCount",
+            "columnName": "episodeCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "showId",
+            "seasonNumber"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_seasons_showId",
+            "unique": false,
+            "columnNames": [
+              "showId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_seasons_showId` ON `${TABLE_NAME}` (`showId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "shows",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "showId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ad2846a8ce415354734c3074b8b9ea5a')"
+    ]
+  }
+}

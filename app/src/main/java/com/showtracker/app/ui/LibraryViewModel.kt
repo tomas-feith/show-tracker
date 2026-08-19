@@ -180,6 +180,21 @@ class LibraryViewModel(
         viewModelScope.launch { library.setWatchedThrough(id, season) }
     }
 
+    /**
+     * Mark the season the user is partway through, or clear it with null.
+     *
+     * Deliberately does not touch the watched-through watermark. Starting season 4 is not a
+     * claim to have finished season 3 - someone can skip ahead, or start a show in the
+     * middle - and inferring one from the other would silently rewrite progress the user
+     * never stated.
+     */
+    fun setInProgress(
+        id: Int,
+        season: Int?,
+    ) {
+        viewModelScope.launch { library.setInProgress(id, season) }
+    }
+
     /** "I am up to date": watched through the latest aired season. */
     fun markCaughtUp(id: Int) {
         viewModelScope.launch {

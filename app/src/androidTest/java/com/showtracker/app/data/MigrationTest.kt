@@ -19,15 +19,15 @@ import java.io.IOException
  * TMDB - and destructive fallback is deliberately disabled, so a missing or wrong migration
  * means a crash on launch rather than a silent reset. This test makes that a build failure.
  *
- * At version 1 there is nothing to migrate yet, so what this proves is that the schema is
- * actually being exported and matches the entities. Without that export, every migration
- * test added later would have nothing to diff against - and the moment to discover a
- * missing `room.schemaLocation` is now, not when version 2 needs it.
+ * The schema JSONs under `app/schemas` are what [MigrationTestHelper] replays against, so
+ * they are committed; a missing export would leave these tests with nothing to diff.
  */
 @RunWith(AndroidJUnit4::class)
 class MigrationTest {
     private companion object {
         const val TEST_DB = "migration-test.db"
+
+        val MIGRATIONS = ShowDatabase.MIGRATIONS.toTypedArray()
     }
 
     @get:Rule
@@ -38,6 +38,43 @@ class MigrationTest {
             emptyList(),
             FrameworkSQLiteOpenHelperFactory(),
         )
+
+    /**
+     * The migration that adds `inProgressSeason` must not disturb a single existing row.
+     *
+     * This is the first real upgrade an installed library will take, and the only copy of
+     * `watchedThroughSeason` is in it. The new column has to arrive as NULL - "nothing in
+     * progress" - which is what was true before it existed.
+     */
+    @Test
+    @Throws(IOException::class)
+    fun addingInProgressSeasonKeepsExistingProgress() {
+        helper.createDatabase(TEST_DB, 1).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO shows
+                    (id, name, posterPath, firstAirDate, status,
+                     watchedThroughSeason, knownAiredSeason, addedAt, lastCheckedAt)
+                VALUES (1, 'Shōgun', NULL, '2024-02-27', 'Returning Series',
+                        3, 4, '2026-01-05T10:00:00.000Z', NULL)
+                """.trimIndent(),
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 2, true, *MIGRATIONS)
+
+        val query =
+            "SELECT name, watchedThroughSeason, knownAiredSeason, inProgressSeason " +
+                "FROM shows WHERE id = 1"
+
+        db.query(query).use { cursor ->
+            assertTrue("the row did not survive the migration", cursor.moveToFirst())
+            assertEquals("Shōgun", cursor.getString(0))
+            assertEquals("watch progress was disturbed", 3, cursor.getInt(1))
+            assertEquals(4, cursor.getInt(2))
+            assertTrue("inProgressSeason should arrive null", cursor.isNull(3))
+        }
+    }
 
     @Test
     @Throws(IOException::class)

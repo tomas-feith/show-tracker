@@ -43,10 +43,34 @@ interface ShowDao {
     @Query("DELETE FROM shows")
     suspend fun deleteAllShows()
 
-    @Query("UPDATE shows SET watchedThroughSeason = :season WHERE id = :id")
+    /**
+     * Move the watched-through watermark, dropping an in-progress marker the watermark has
+     * now reached.
+     *
+     * Both in one statement rather than two writes, so no observer of the library flow can
+     * ever see a show that is simultaneously finished with season 3 and partway through it.
+     * Seasons above the new watermark keep their marker: moving the watermark backwards to
+     * correct a mis-tap must not also forget where the user had got to.
+     */
+    @Query(
+        """
+        UPDATE shows
+        SET watchedThroughSeason = :season,
+            inProgressSeason =
+                CASE WHEN inProgressSeason <= :season THEN NULL ELSE inProgressSeason END
+        WHERE id = :id
+        """,
+    )
     suspend fun setWatchedThrough(
         id: Int,
         season: Int,
+    )
+
+    /** Set or clear the season the user is partway through. Null means nothing in progress. */
+    @Query("UPDATE shows SET inProgressSeason = :season WHERE id = :id")
+    suspend fun setInProgressSeason(
+        id: Int,
+        season: Int?,
     )
 
     /**

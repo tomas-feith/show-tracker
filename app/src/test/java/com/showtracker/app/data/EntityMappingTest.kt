@@ -69,6 +69,14 @@ class EntityMappingTest {
     }
 
     @Test
+    fun `carries the in-progress marker, and its absence, across the entity boundary`() {
+        // Null is a real value here - "nothing in progress" - not a missing one, so both
+        // directions matter.
+        assertNull(roundTrip(show).inProgressSeason)
+        assertEquals(2, roundTrip(show.copy(inProgressSeason = 2)).inProgressSeason)
+    }
+
+    @Test
     fun `preserves nullable metadata that is never null in the sample library`() {
         // 0% of the real export has a null poster or first air date, which says nothing
         // about whether one can occur. TMDB returns null for a show with no artwork.

@@ -28,6 +28,7 @@ class NewnessTest {
         seasons: List<Season> = emptyList(),
         nextEpisode: EpisodeRef? = null,
         watchedThroughSeason: Int = 0,
+        inProgressSeason: Int? = null,
         knownAiredSeason: Int = 0,
     ) = TrackedShow(
         id = id,
@@ -37,6 +38,7 @@ class NewnessTest {
         seasons = seasons,
         nextEpisode = nextEpisode,
         watchedThroughSeason = watchedThroughSeason,
+        inProgressSeason = inProgressSeason,
         knownAiredSeason = knownAiredSeason,
         addedAt = "2026-01-01T00:00:00.000Z",
     )
@@ -402,6 +404,109 @@ class NewnessTest {
                 show(id = 1, name = "Grimm", status = "Ended"),
                 show(id = 2, name = "Glória", status = "Ended"),
             )
+        assertEquals(listOf(2, 1), sortLibrary(shows, today).map { it.id })
+    }
+
+    // --- in progress ---
+
+    @Test
+    fun `resolves the season the user is partway through`() {
+        val seasons = listOf(season(1, "2020-01-01"), season(2, "2021-01-01"))
+        val resolved = seasonInProgress(show(seasons = seasons, inProgressSeason = 2), today)
+        assertEquals(2, resolved?.seasonNumber)
+    }
+
+    @Test
+    fun `has nothing in progress without a marker`() {
+        val seasons = listOf(season(1, "2020-01-01"))
+        assertNull(seasonInProgress(show(seasons = seasons), today))
+    }
+
+    @Test
+    fun `ignores a marker on a season already watched through`() {
+        // The marker outlives the watermark move in an old row, or in an imported file
+        // written before the two were kept consistent. A finished season is not underway.
+        val seasons = listOf(season(1, "2020-01-01"), season(2, "2021-01-01"))
+        assertNull(
+            seasonInProgress(
+                show(seasons = seasons, watchedThroughSeason = 2, inProgressSeason = 2),
+                today,
+            ),
+        )
+    }
+
+    @Test
+    fun `ignores a marker on a season TMDB no longer lists`() {
+        val seasons = listOf(season(1, "2020-01-01"))
+        assertNull(seasonInProgress(show(seasons = seasons, inProgressSeason = 4), today))
+    }
+
+    @Test
+    fun `ignores a marker on a season that has not aired yet`() {
+        val seasons = listOf(season(1, "2020-01-01"), season(2, "2026-12-01"))
+        assertNull(seasonInProgress(show(seasons = seasons, inProgressSeason = 2), today))
+    }
+
+    @Test
+    fun `a season in progress outranks the backlog it sits in`() {
+        val seasons =
+            listOf(
+                season(1, "2020-01-01"),
+                season(2, "2021-01-01"),
+                season(3, "2022-01-01"),
+            )
+        val state =
+            showState(
+                show(seasons = seasons, watchedThroughSeason = 0, inProgressSeason = 1),
+                today,
+            )
+
+        assertTrue(state is ShowState.Watching)
+        state as ShowState.Watching
+        assertEquals(1, state.season.seasonNumber)
+        // Seasons 2 and 3 are still waiting once season 1 is finished.
+        assertEquals(2, state.seasonsAfter)
+    }
+
+    @Test
+    fun `a season in progress with nothing above it reports no remainder`() {
+        val seasons = listOf(season(1, "2020-01-01"), season(2, "2021-01-01"))
+        val state =
+            showState(
+                show(seasons = seasons, watchedThroughSeason = 1, inProgressSeason = 2),
+                today,
+            )
+
+        assertEquals(ShowState.Watching(seasons[1], 0), state)
+    }
+
+    @Test
+    fun `a stale marker falls back to the state it would otherwise have`() {
+        val seasons = listOf(season(1, "2020-01-01"), season(2, "2021-01-01"))
+        val state =
+            showState(
+                show(seasons = seasons, watchedThroughSeason = 0, inProgressSeason = 9),
+                today,
+            )
+
+        assertTrue(state is ShowState.Behind)
+    }
+
+    @Test
+    fun `sorts shows in progress above shows merely behind`() {
+        val seasons = listOf(season(1, "2020-01-01"), season(2, "2026-08-01"))
+        val shows =
+            listOf(
+                // Two seasons behind, and a season that dropped a fortnight ago.
+                show(id = 1, name = "Behind", seasons = seasons),
+                show(
+                    id = 2,
+                    name = "Underway",
+                    seasons = seasons,
+                    inProgressSeason = 1,
+                ),
+            )
+
         assertEquals(listOf(2, 1), sortLibrary(shows, today).map { it.id })
     }
 

@@ -40,12 +40,31 @@ class LibraryRepository(
      * Record that the user has watched through [season]. Clamped at zero, since "not
      * started" is the floor and a negative watermark would make every aired season count
      * as backlog twice over.
+     *
+     * An in-progress marker at or below the new watermark is dropped as part of the same
+     * statement; see [ShowDao.setWatchedThrough].
      */
     suspend fun setWatchedThrough(
         id: Int,
         season: Int,
     ) {
         dao.setWatchedThrough(id, season.coerceAtLeast(0))
+    }
+
+    /**
+     * Record that the user is partway through [season], or clear the marker with null.
+     *
+     * A season already at or below the watched-through watermark cannot be in progress -
+     * it is finished - so the marker is refused rather than written, which keeps the
+     * database from holding a state `seasonInProgress` would only ignore.
+     */
+    suspend fun setInProgress(
+        id: Int,
+        season: Int?,
+    ) {
+        val show = dao.getById(id)?.show ?: return
+        val marker = season?.takeIf { it > show.watchedThroughSeason }
+        dao.setInProgressSeason(id, marker)
     }
 
     /**

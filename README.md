@@ -19,6 +19,18 @@ one season, "3 seasons behind" for more. Tapping the same season again clears it
 so a mis-tap is undoable. Following a show assumes you are up to date; change it
 if you are not.
 
+The play button beside an aired season marks it as the one you are partway
+through, and tapping it again clears it. A show with a season underway says
+"Watching season 4 - 2 more aired" and sorts above the rest of the library, since
+a season already started is a better answer to "what do I put on" than one never
+opened.
+
+That marker is a third piece of state rather than a half-step on
+`watchedThroughSeason`, because "started season 4" and "finished season 3" are
+different claims - you can start a show in the middle, or skip ahead. Marking a
+season watched drops the marker on it, since a finished season is no longer in
+progress; moving the watermark backwards leaves it alone.
+
 ## How it decides something is new
 
 Each show carries two separate watermarks, which sounds like one too many until
@@ -89,8 +101,8 @@ CI runs all of the above on every push and pull request to `main`.
 ## Backing up and restoring
 
 A library lives only inside its own app's storage. An export is a versioned JSON
-file holding every show followed, both watermarks per show, and the last check
-timestamp - and it is the only way a library moves between installs, including
+file holding every show followed, both watermarks and any in-progress marker per
+show, and the last check timestamp - and it is the only way a library moves between installs, including
 across the port from the React Native build tagged `rn-final`.
 
 ```json
@@ -103,7 +115,9 @@ export is designed to leave the device; pasting the key again afterwards takes
 seconds.
 
 `format` and `version` are stamped so the importer refuses a file it does not
-understand rather than half-loading it.
+understand rather than half-loading it. `version` gates breaking changes only: a
+later writer's added field, such as `inProgressSeason`, is ignored by an older
+reader rather than refused, so files still move in both directions.
 
 This app both reads and writes that format, from Settings, then **Your data**.
 Import replaces the whole library and asks first. Export is how a backup leaves

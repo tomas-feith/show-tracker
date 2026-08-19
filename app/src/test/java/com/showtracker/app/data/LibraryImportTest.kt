@@ -91,6 +91,26 @@ class LibraryImportTest {
     }
 
     @Test
+    fun `a file written before in-progress marking existed has nothing in progress`() {
+        // Every show in the sample predates the field. Absent must mean "nothing in
+        // progress" rather than a season number invented from the watermark.
+        assertTrue(success().shows.all { it.inProgressSeason == null })
+    }
+
+    @Test
+    fun `reads an in-progress marker when the file carries one`() {
+        val text =
+            """
+            {"format":"showtracker-export","version":1,"shows":[
+              {"id":7,"name":"Underway","addedAt":"2026-01-01T00:00:00.000Z",
+               "watchedThroughSeason":2,"inProgressSeason":3}
+            ]}
+            """.trimIndent()
+        val result = parseExport(text) as ImportResult.Success
+        assertEquals(3, result.shows.single().inProgressSeason)
+    }
+
+    @Test
     fun `refuses a file that is not an export`() {
         val result = parseExport("""{"format":"something-else","version":1,"shows":[]}""")
         assertTrue(result is ImportResult.Failure)

@@ -4,6 +4,7 @@ import com.showtracker.app.domain.EpisodeRef
 import com.showtracker.app.domain.Season
 import com.showtracker.app.domain.TrackedShow
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
@@ -45,7 +46,8 @@ class LibraryExportTest {
                 firstAirDate = null,
                 status = "Ended",
                 seasons = listOf(Season(1, "Season 1", "2021-11-05", 10)),
-                watchedThroughSeason = 1,
+                watchedThroughSeason = 0,
+                inProgressSeason = 1,
                 knownAiredSeason = 1,
                 addedAt = "2026-02-01T00:00:00Z",
                 lastCheckedAt = null,
@@ -89,6 +91,26 @@ class LibraryExportTest {
         val shogun = restored.shows.single { it.id == 1 }
         assertEquals(0, shogun.watchedThroughSeason)
         assertEquals(1, shogun.knownAiredSeason)
+    }
+
+    @Test
+    fun `round trips the in-progress marker, and omits it when there is none`() {
+        val text = buildExport(shows, null, now)
+        val restored = parseExport(text) as ImportResult.Success
+
+        assertEquals(1, restored.shows.single { it.id == 2 }.inProgressSeason)
+        assertNull(restored.shows.single { it.id == 1 }.inProgressSeason)
+        // Written once, for the show that has one: explicitNulls is off, so the show with
+        // nothing in progress carries no key at all rather than an explicit null.
+        assertEquals(1, Regex("inProgressSeason").findAll(text).count())
+    }
+
+    @Test
+    fun `stays on format version 1 so an older reader still accepts the file`() {
+        // inProgressSeason is an added optional field, not a breaking change. A bump here
+        // would make every existing reader - the React Native build included - refuse a
+        // file it could otherwise read.
+        assertEquals(1, EXPORT_VERSION)
     }
 
     @Test

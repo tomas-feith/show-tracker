@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -33,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -40,11 +42,13 @@ import com.showtracker.app.domain.Season
 import com.showtracker.app.domain.TrackedShow
 import com.showtracker.app.domain.hasAired
 import com.showtracker.app.domain.realSeasons
+import com.showtracker.app.domain.seasonInProgress
 import com.showtracker.app.ui.LibraryViewModel
 import com.showtracker.app.ui.components.Poster
 import com.showtracker.app.ui.theme.Accent
 import com.showtracker.app.ui.theme.Border
 import com.showtracker.app.ui.theme.Danger
+import com.showtracker.app.ui.theme.StateAiring
 import com.showtracker.app.ui.theme.StateNew
 import com.showtracker.app.ui.theme.Surface
 import com.showtracker.app.ui.theme.SurfaceAlt
@@ -130,31 +134,13 @@ fun DetailScreen(
 
             Text(
                 "Tap the last season you finished. Everything above it is backlog; tap it " +
-                    "again to clear.",
+                    "again to clear. Use the play button to mark the one you are partway " +
+                    "through.",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextFaint,
             )
 
-            realSeasons(show.seasons)
-                .sortedBy { it.seasonNumber }
-                .forEach { season ->
-                    SeasonRow(
-                        season = season,
-                        show = show,
-                        today = today,
-                        onTap = {
-                            // Tapping the current watermark clears it, so a mis-tap is
-                            // undoable without a separate control.
-                            val next =
-                                if (show.watchedThroughSeason == season.seasonNumber) {
-                                    season.seasonNumber - 1
-                                } else {
-                                    season.seasonNumber
-                                }
-                            viewModel.setWatchedThrough(show.id, next)
-                        },
-                    )
-                }
+            SeasonList(show, today, viewModel)
         }
     }
 
@@ -179,16 +165,109 @@ fun DetailScreen(
     }
 }
 
+/**
+ * The season list, and the two things a tap can mean.
+ *
+ * Extracted from [DetailScreen] so each stays readable, not because it is reused.
+ */
+@Composable
+private fun SeasonList(
+    show: TrackedShow,
+    today: LocalDate,
+    viewModel: LibraryViewModel,
+) {
+    val inProgress = seasonInProgress(show, today)
+
+    realSeasons(show.seasons)
+        .sortedBy { it.seasonNumber }
+        .forEach { season ->
+            SeasonRow(
+                season = season,
+                show = show,
+                today = today,
+                inProgress = inProgress?.seasonNumber == season.seasonNumber,
+                onToggleInProgress = {
+                    // Tapping the season already in progress clears it, the same
+                    // tap-again-to-undo convention the watermark uses.
+                    val next =
+                        season.seasonNumber.takeIf {
+                            inProgress?.seasonNumber != it
+                        }
+                    viewModel.setInProgress(show.id, next)
+                },
+                onTap = {
+                    // Tapping the current watermark clears it, so a mis-tap is undoable
+                    // without a separate control.
+                    val next =
+                        if (show.watchedThroughSeason == season.seasonNumber) {
+                            season.seasonNumber - 1
+                        } else {
+                            season.seasonNumber
+                        }
+                    viewModel.setWatchedThrough(show.id, next)
+                },
+            )
+        }
+}
+
+/**
+ * How one season row reads, given where the user has got to.
+ *
+ * Plain data computed outside the composable: the three branches all key off the same two
+ * facts, and reading them together is what makes it obvious that "watching" wins over
+ * "backlog" consistently in the badge, the caption and its colour.
+ */
+private data class SeasonLook(
+    val badge: Color,
+    val caption: String,
+    val captionColor: Color,
+)
+
+private fun seasonLook(
+    season: Season,
+    aired: Boolean,
+    watched: Boolean,
+    inProgress: Boolean,
+): SeasonLook {
+    val backlog = aired && !watched
+
+    return SeasonLook(
+        badge =
+            when {
+                inProgress -> StateAiring
+                backlog -> StateNew
+                watched -> Accent
+                else -> Border
+            },
+        caption =
+            when {
+                !aired && season.airDate != null -> "Airs ${season.airDate}"
+                !aired -> "No date yet"
+                inProgress -> "Watching - ${season.episodeCount} episodes"
+                watched -> "Watched"
+                else -> "${season.episodeCount} episodes"
+            },
+        captionColor =
+            when {
+                inProgress -> StateAiring
+                backlog -> StateNew
+                else -> TextMuted
+            },
+    )
+}
+
 @Composable
 private fun SeasonRow(
     season: Season,
     show: TrackedShow,
     today: LocalDate,
+    inProgress: Boolean,
+    onToggleInProgress: () -> Unit,
     onTap: () -> Unit,
 ) {
     val aired = hasAired(season, today)
     val watched = season.seasonNumber <= show.watchedThroughSeason
-    val backlog = aired && !watched
+    val look = seasonLook(season, aired, watched, inProgress)
 
     Row(
         Modifier
@@ -203,13 +282,8 @@ private fun SeasonRow(
         Box(
             Modifier
                 .clip(RoundedCornerShape(4.dp))
-                .background(
-                    when {
-                        backlog -> StateNew
-                        watched -> Accent
-                        else -> Border
-                    },
-                ).padding(horizontal = 8.dp, vertical = 4.dp),
+                .background(look.badge)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
         ) {
             Text(
                 "S${season.seasonNumber}",
@@ -226,15 +300,37 @@ private fun SeasonRow(
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                when {
-                    !aired && season.airDate != null -> "Airs ${season.airDate}"
-                    !aired -> "No date yet"
-                    watched -> "Watched"
-                    else -> "${season.episodeCount} episodes"
-                },
+                look.caption,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (backlog) StateNew else TextMuted,
+                color = look.captionColor,
             )
         }
+
+        // Offered only for a season that can actually be underway. A finished one is not in
+        // progress, and an unaired one cannot be started, so the control would invite a tap
+        // the repository refuses.
+        if (aired && !watched) {
+            InProgressToggle(season.seasonNumber, inProgress, onToggleInProgress)
+        }
+    }
+}
+
+@Composable
+private fun InProgressToggle(
+    seasonNumber: Int,
+    inProgress: Boolean,
+    onToggle: () -> Unit,
+) {
+    IconButton(onClick = onToggle) {
+        Icon(
+            Icons.Default.PlayArrow,
+            contentDescription =
+                if (inProgress) {
+                    "Stop marking season $seasonNumber as in progress"
+                } else {
+                    "Mark season $seasonNumber as in progress"
+                },
+            tint = if (inProgress) StateAiring else TextFaint,
+        )
     }
 }

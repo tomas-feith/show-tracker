@@ -94,6 +94,19 @@ data class TrackedShow(
      */
     val watchedThroughSeason: Int = 0,
     /**
+     * The season the user is partway through, or null when nothing is in progress.
+     *
+     * A third piece of state rather than a half-step on [watchedThroughSeason], because
+     * "started season 4" and "finished season 3" are not the same claim: the first says
+     * where to resume, the second is what the backlog count is measured from. A fractional
+     * or off-by-one watermark would have to mean both at once.
+     *
+     * Only ever one season: this records where the user is, not a set of things half-seen.
+     * The marker is dropped once [watchedThroughSeason] reaches it, since a finished season
+     * is no longer in progress.
+     */
+    val inProgressSeason: Int? = null,
+    /**
      * The latest aired season number as observed at the last check.
      *
      * Recorded rather than recomputed: the stored season list is always re-evaluated
@@ -122,6 +135,18 @@ data class Discovery(
  * silently fall through a branch somewhere.
  */
 sealed interface ShowState {
+    /**
+     * A season the user has started and not finished. Outranks [Behind], because a season
+     * already underway is a better answer to "what do I put on" than one never started.
+     *
+     * [seasonsAfter] counts the aired seasons above this one, so the row can still say how
+     * much is waiting once it is finished.
+     */
+    data class Watching(
+        val season: Season,
+        val seasonsAfter: Int,
+    ) : ShowState
+
     /** Aired seasons the user has not watched. [seasonsBehind] is at least 1. */
     data class Behind(
         val latest: Season,
