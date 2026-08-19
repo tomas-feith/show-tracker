@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -20,18 +22,27 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.showtracker.app.domain.TrackedShow
+import com.showtracker.app.domain.filterLibrary
 import com.showtracker.app.domain.sortLibrary
 import com.showtracker.app.ui.LibraryViewModel
 import com.showtracker.app.ui.components.Divider
@@ -57,9 +68,15 @@ fun LibraryScreen(
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
 
-    // Sorted here rather than in the query: the order depends on today's date and on
-    // derived state, neither of which SQL knows about.
-    val ordered = sortLibrary(state.shows, today)
+    // Kept in the screen rather than the view model: it is a way of looking at the library,
+    // not part of it, and it should not survive being navigated away from and back to.
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+
+    // Filtered before sorting, so the order of what survives is the order it would have had
+    // in the full library - a search result that reshuffled itself would be harder to read,
+    // not easier.
+    val ordered = sortLibrary(filterLibrary(state.shows, query), today)
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -78,6 +95,21 @@ fun LibraryScreen(
                             strokeWidth = 2.dp,
                             color = Accent,
                         )
+                    }
+                    if (state.shows.isNotEmpty()) {
+                        IconButton(onClick = {
+                            searching = !searching
+                            // Closing clears, so the library is never left silently
+                            // filtered behind a hidden box.
+                            if (!searching) query = ""
+                        }) {
+                            Icon(
+                                if (searching) Icons.Default.Close else Icons.Default.Search,
+                                contentDescription =
+                                    if (searching) "Close search" else "Search your shows",
+                                tint = TextMuted,
+                            )
+                        }
                     }
                     IconButton(onClick = onOpenSettings) {
                         Icon(
@@ -98,6 +130,10 @@ fun LibraryScreen(
         },
     ) { insets ->
         Column(Modifier.padding(insets).fillMaxSize()) {
+            if (searching) {
+                SearchField(query, onQueryChange = { query = it })
+            }
+
             error?.let { message ->
                 Text(
                     text = message,
@@ -125,6 +161,13 @@ fun LibraryScreen(
                     )
                 }
 
+                ordered.isEmpty() && query.isNotBlank() -> {
+                    Empty(
+                        title = "No shows match",
+                        body = "Nothing in your library is called \"${query.trim()}\".",
+                    )
+                }
+
                 ordered.isEmpty() -> {
                     Empty(
                         title = "Nothing followed yet",
@@ -138,6 +181,34 @@ fun LibraryScreen(
             }
         }
     }
+}
+
+/**
+ * The filter box, focused as it appears so the keyboard is already up.
+ *
+ * Below the bar rather than replacing the title in it: it matches the box on the add-a-show
+ * screen, which is the other place in the app someone types a show's name.
+ */
+@Composable
+private fun SearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+) {
+    val focus = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) { focus.requestFocus() }
+
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        placeholder = { Text("Search your shows", color = TextFaint) },
+        singleLine = true,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .focusRequester(focus),
+    )
 }
 
 @Composable

@@ -488,7 +488,13 @@ class NewnessTest {
                 watchedThroughSeason =
                     initialWatchedThrough(airingSeasons, airedSoFar, dueNext, today),
                 knownAiredSeason = initialWatermark(airingSeasons, today),
-            ).copy(lastEpisode = airedSoFar, nextEpisode = null)
+            ).copy(
+                // The finale has aired, so it is the last episode TMDB reports and there is
+                // no next one. Leaving lastEpisode mid-season would describe a run that is
+                // still going, which is a different case entirely.
+                lastEpisode = EpisodeRef(4, 8, "Episode 8", "2026-09-19"),
+                nextEpisode = null,
+            )
 
         val afterFinale = date("2026-09-20")
         assertEquals(1, seasonsBehind(added, afterFinale))
@@ -532,6 +538,60 @@ class NewnessTest {
                 .copy(nextEpisode = premiere)
 
         assertTrue(showState(stale, today) is ShowState.Behind)
+    }
+
+    @Test
+    fun `keeps a weekly show airing on the days TMDB names no next episode`() {
+        // The gap between two episodes: next_episode_to_air is null, but four of eight
+        // episodes are out, so the season is plainly still running. Reading the marker
+        // alone dropped this back to "Season 4 out 7 days ago" until the next one appeared.
+        val midRun =
+            show(seasons = airingSeasons, watchedThroughSeason = 3)
+                .copy(lastEpisode = EpisodeRef(4, 4, "Episode 4", "2026-08-12"), nextEpisode = null)
+
+        assertEquals(ShowState.Running(airingSeasons[3], 4, 8), showState(midRun, today))
+    }
+
+    @Test
+    fun `counts an episode airing today as coming, not as backlog`() {
+        val dueToday = EpisodeRef(4, 3, "Episode 3", "2026-08-14")
+        val airingToday =
+            show(seasons = airingSeasons, watchedThroughSeason = 3)
+                .copy(lastEpisode = airedSoFar, nextEpisode = dueToday)
+
+        assertEquals(ShowState.Airing(dueToday, 0), showState(airingToday, today))
+    }
+
+    @Test
+    fun `stops running once the finale has aired`() {
+        val finished =
+            show(seasons = airingSeasons, watchedThroughSeason = 3)
+                .copy(lastEpisode = EpisodeRef(4, 8, "Episode 8", "2026-08-13"), nextEpisode = null)
+
+        val state = showState(finished, today)
+        assertTrue(state is ShowState.Behind)
+        assertEquals(1, (state as ShowState.Behind).seasonsBehind)
+    }
+
+    @Test
+    fun `does not call an ended show airing on a stale next-episode marker`() {
+        // TMDB leaves next_episode_to_air behind sometimes. It only means episodes are
+        // coming while the episode it names has not already aired.
+        val stale =
+            show(seasons = airingSeasons, watchedThroughSeason = 4, status = "Ended")
+                .copy(nextEpisode = EpisodeRef(4, 9, "Stale", "2026-07-01"))
+
+        assertEquals(ShowState.Ended, showState(stale, today))
+        assertEquals(4, initialWatchedThrough(airingSeasons, null, stale.nextEpisode, today))
+    }
+
+    @Test
+    fun `does not report a run when nothing says episodes are still coming`() {
+        val unknown =
+            show(seasons = airingSeasons, watchedThroughSeason = 3)
+                .copy(lastEpisode = null, nextEpisode = null)
+
+        assertTrue(showState(unknown, today) is ShowState.Behind)
     }
 
     // --- in progress ---

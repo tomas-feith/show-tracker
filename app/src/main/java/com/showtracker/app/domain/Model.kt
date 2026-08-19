@@ -162,6 +162,23 @@ sealed interface ShowState {
         val daysUntil: Int,
     ) : ShowState
 
+    /**
+     * A season still releasing episodes when there is no dated next episode to name.
+     *
+     * TMDB clears `next_episode_to_air` in the gap between two episodes, not only after a
+     * finale, so a weekly show spends part of every week with no next episode published.
+     * Without this the show would fall back to reading as a backlog for those days and
+     * return to airing when the marker reappeared, which is the state flapping rather than
+     * anything about the show changing.
+     *
+     * [episodesAired] is 0 when even that is unknown.
+     */
+    data class Running(
+        val season: Season,
+        val episodesAired: Int,
+        val episodeCount: Int,
+    ) : ShowState
+
     data class Upcoming(
         val season: Season,
         val daysUntil: Int,

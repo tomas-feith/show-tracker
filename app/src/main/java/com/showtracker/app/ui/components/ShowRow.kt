@@ -124,6 +124,19 @@ private fun label(
             )
         }
 
+        is ShowState.Running -> {
+            StateLabel(
+                text =
+                    if (state.episodesAired in 1 until state.episodeCount) {
+                        "Season ${state.season.seasonNumber} airing - " +
+                            "${state.episodesAired} of ${state.episodeCount} out"
+                    } else {
+                        "Season ${state.season.seasonNumber} airing"
+                    },
+                color = StateAiring,
+            )
+        }
+
         is ShowState.Upcoming -> {
             StateLabel(
                 "Season ${state.season.seasonNumber} ${describeDays(

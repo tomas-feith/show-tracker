@@ -56,6 +56,12 @@ it, the library shows the next episode rather than the backlog: "S01E02 in 4
 days", not "Season 1 out 3 days ago". A weekly show is something to keep up with.
 With older seasons unwatched as well, the depth wins the headline again.
 
+"Still dropping episodes" is decided the same way for the label as for the
+watermark, and deliberately not by whether TMDB currently names a next episode -
+it clears that marker in the gap between two episodes as well as after a finale.
+On those days the show reads "Season 4 airing - 3 of 8 out" instead, rather than
+flapping back to a backlog until the next episode is published.
+
 A season counts as aired - and so as backlog - only when it has a real season
 number, a past air date, and at least one episode. All three matter:
 
@@ -68,6 +74,14 @@ recomputed. The stored season list is always evaluated against today's date, so
 a season TMDB had listed early would look like it had aired all along once its
 date passed, and the moment it actually dropped would go unannounced - which is
 the entire failure this app exists to prevent. There is a regression test for it.
+
+## Finding a show
+
+The magnifier in the library filters by name as you type. Accents are folded, so
+"shogun" finds "Shōgun" and "gloria" finds "Glória" without hunting for the right
+diacritic on the keyboard, and the match is on any part of the name rather than
+its start - "bear" finds "The Bear". Closing the box clears it, so the library is
+never left quietly filtered.
 
 ## Checking for updates
 

@@ -1,6 +1,7 @@
 package com.showtracker.app.domain
 
 import java.text.Collator
+import java.text.Normalizer
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import kotlin.math.abs
@@ -96,7 +97,14 @@ fun isStillAiring(
 ): Boolean {
     if (!hasAired(season, today)) return false
 
-    if (nextEpisode?.seasonNumber == season.seasonNumber) return true
+    // A next-episode marker only says episodes are coming while the episode it names has
+    // not aired: TMDB occasionally leaves a stale one behind on a finished show, and taking
+    // that at face value reports an ended series as still running. An undated marker counts
+    // - the episode is scheduled, just not yet placed.
+    if (nextEpisode?.seasonNumber == season.seasonNumber) {
+        val airs = nextEpisode.airDateOrNull
+        if (airs == null || !airs.isBefore(today)) return true
+    }
 
     return lastEpisode?.seasonNumber == season.seasonNumber &&
         lastEpisode.episodeNumber < season.episodeCount
@@ -186,7 +194,7 @@ fun showState(
     val nextAirs = next?.airDateOrNull
     val upcoming = nextUnairedSeason(show.seasons, today)
     val upcomingAirs = upcoming?.airDateOrNull
-    val liveRun = liveRun(latest, next, today)
+    val liveRun = liveRun(show, latest, today)
 
     // Branch order is the precedence: a season already underway outranks everything, then a
     // run still releasing episodes, then an unwatched aired season.
@@ -232,22 +240,35 @@ fun showState(
 /**
  * The state of a season still dropping episodes, or null when no run is in flight.
  *
- * The next episode has to belong to the latest aired season for this to be that season
- * continuing rather than something newer being announced over the top of it. Calling a
- * weekly show "Season 1 out 3 days ago" describes it as a backlog, when the episode due on
- * Thursday is the useful thing and the season cannot be caught up on yet anyway.
+ * Gated on [isStillAiring] rather than on there being a dated next episode, so that the one
+ * definition of "still releasing" drives the label as well as the watermark. Reading the
+ * next-episode marker alone made a weekly show fall back to "Season 4 out 7 days ago" for
+ * the part of each week when TMDB had not yet published the following episode.
+ *
+ * The next episode is named when there is one, and it counts as coming while it airs
+ * *today*: an episode dropping in a few hours is the least backlog-like thing there is.
+ * Otherwise the season is reported as running, without one.
  */
 private fun liveRun(
+    show: TrackedShow,
     latest: Season?,
-    next: EpisodeRef?,
     today: LocalDate,
-): ShowState.Airing? {
-    if (latest == null || next == null || next.seasonNumber != latest.seasonNumber) return null
+): ShowState? {
+    if (latest == null) return null
+    if (!isStillAiring(latest, show.lastEpisode, show.nextEpisode, today)) return null
 
-    val airs = next.airDateOrNull ?: return null
-    if (hasHappened(airs, today)) return null
+    val next = show.nextEpisode?.takeIf { it.seasonNumber == latest.seasonNumber }
+    val airs = next?.airDateOrNull?.takeIf { !it.isBefore(today) }
 
-    return ShowState.Airing(next, daysBetween(today, airs))
+    if (next != null && airs != null) return ShowState.Airing(next, daysBetween(today, airs))
+
+    val aired =
+        show.lastEpisode
+            ?.takeIf { it.seasonNumber == latest.seasonNumber }
+            ?.episodeNumber
+            ?: 0
+
+    return ShowState.Running(latest, aired, latest.episodeCount)
 }
 
 /**
@@ -256,13 +277,20 @@ private fun liveRun(
  */
 private val TERMINAL_STATUSES = setOf("Ended", "Canceled")
 
-/** Sort weight per state: lower sorts first. */
+/**
+ * Sort weight per state: lower sorts first.
+ *
+ * [ShowState.Running] shares a weight with [ShowState.Airing] because it is the same show
+ * on a day TMDB has not published the next episode; a different weight would shuffle it up
+ * and down the list as that marker came and went.
+ */
 private val ShowState.order: Int
     get() =
         when (this) {
             is ShowState.Watching -> 0
             is ShowState.Behind -> 1
             is ShowState.Airing -> 2
+            is ShowState.Running -> 2
             is ShowState.Upcoming -> 3
             ShowState.Waiting -> 4
             ShowState.Ended -> 5
@@ -285,8 +313,10 @@ fun sortLibrary(
         compareBy<TrackedShow> { states.getValue(it.id).order }
             .thenBy { show ->
                 when (val state = states.getValue(show.id)) {
-                    // Nothing to rank shows in progress by but their names, below.
+                    // Nothing to rank these by but their names, below.
                     is ShowState.Watching -> 0
+
+                    is ShowState.Running -> 0
 
                     // Most recent drop first.
                     is ShowState.Behind -> state.daysAgo
@@ -302,6 +332,41 @@ fun sortLibrary(
                 (states.getValue(show.id) as? ShowState.Behind)?.seasonsBehind ?: 0
             }.thenBy(nameOrder) { it.name },
     )
+}
+
+/**
+ * Fold a name to what someone would actually type on a phone keyboard: lower case, and
+ * stripped of the accents this library is full of.
+ *
+ * NFD splits an accented letter into its base letter and a combining mark, which the regex
+ * then drops, so "Glória" folds to "gloria" and "Shōgun" to "shogun". Without it a library
+ * that files those under G and S can only be searched by someone willing to long-press the
+ * key for the right diacritic - and the point of the box is to find a show quickly.
+ */
+private fun fold(value: String): String =
+    Normalizer
+        .normalize(value, Normalizer.Form.NFD)
+        .replace(COMBINING_MARKS, "")
+        .lowercase()
+
+private val COMBINING_MARKS = Regex("""\p{Mn}+""")
+
+/**
+ * The shows whose names contain [query], or all of them when it is blank.
+ *
+ * Substring rather than prefix: a library is full of "The ..." titles, and remembering how
+ * one starts is exactly what someone scrolling a long list has failed to do. Matched on the
+ * name alone - overviews would turn a search for a title into a search for a plot summary,
+ * and quietly return shows whose names do not match at all.
+ */
+fun filterLibrary(
+    shows: List<TrackedShow>,
+    query: String,
+): List<TrackedShow> {
+    val needle = fold(query.trim())
+    if (needle.isEmpty()) return shows
+
+    return shows.filter { fold(it.name).contains(needle) }
 }
 
 /**
