@@ -18,13 +18,21 @@ post notifications or run background tasks, which forced lazy `require`s and
 null-tolerant callers throughout the notification layer. Kotlin is now the
 default for Android work here; see the global `~/.claude/CLAUDE.md`.
 
-The React Native version is tagged **`rn-final`** and is still the build running
-on the phone. Recover it with `git checkout rn-final` if a reference is needed.
+The React Native version is tagged **`rn-final`**. Recover it with
+`git checkout rn-final` if a reference is needed; it is no longer installed
+anywhere.
+
+**The cutover is done.** It happened on 2026-08-15: `com.showtracker.app` on the
+phone is the Kotlin release, holding the live library in its Room database, and
+the React Native build is gone. This file and `docs/INSTALLING.md` both said
+otherwise until 2026-08-19, and that stale claim caused a real scare - an
+`adb install -r` was run expecting Android to refuse it on a certificate
+mismatch, and it succeeded, because there was no mismatch and never had been.
+Verify what is on the phone before trusting a document about it.
 
 Phases 0-6 are all built: export (in `rn-final`), skeleton, domain + Room and
 the importer, TMDB client, Compose UI, WorkManager + notifications, and the
-import/export UI. What remains is the cutover itself, which is manual and
-described in `docs/INSTALLING.md`.
+import/export UI.
 
 The logic worth porting carefully lives in `rn-final` under `src/core/`:
 `newness.ts` decides what counts as aired, `refresh.ts` folds TMDB responses into
@@ -41,14 +49,14 @@ Two traps when porting that logic:
 
 ## Debug builds are a separate app
 
-`applicationIdSuffix = ".debug"`. The release `com.showtracker.app` on the phone
-is the React Native build and holds the only live copy of the library, so a debug
-build must sit beside it rather than demand to replace it - under a different
-signing key, replacing means uninstalling first, which erases that library.
+`applicationIdSuffix = ".debug"`, so a debug build installs as
+`com.showtracker.app.debug` with its own database and can be tried without
+touching the release install. That release install holds the only live copy of
+the library: it is not backed by a server, and an uninstall erases it.
 
-At cutover the old app is uninstalled deliberately and the library restored from
-the export file. Do not uninstall it before then.
-
-The release keystore lives outside the repository and cannot be regenerated; see
-`docs/INSTALLING.md`. Always print an APK's signer and compare it before
-installing over anything holding real data.
+`adb install -r` keeps the database, but only while the signing certificate
+matches. The release keystore lives outside the repository and cannot be
+regenerated; see `docs/INSTALLING.md`. Always print an APK's signer and compare
+it before installing over anything holding real data - and never run an install
+against that package expecting it to fail. If the point is to prove a
+certificate mismatch, compare the printed digests instead.
