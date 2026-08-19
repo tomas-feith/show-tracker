@@ -68,11 +68,68 @@ fun nextUnairedSeason(
 /**
  * The season number to record as "already known" when a show is first added, so that
  * following a long-running show does not immediately report news.
+ *
+ * This is [TrackedShow.knownAiredSeason] only. A season that has started airing has been
+ * announced, finished or not, so there is nothing left to tell the user about it - which is
+ * a different question from whether they have watched it. See [initialWatchedThrough].
  */
 fun initialWatermark(
     seasons: List<Season>,
     today: LocalDate,
 ): Int = latestAiredSeason(seasons, today)?.seasonNumber ?: 0
+
+/**
+ * Whether a season has started airing but not finished - episodes are still being released.
+ *
+ * [hasAired] means "has started", which is the right test for announcing a season and the
+ * wrong one for assuming it has been watched. Two signals, because TMDB supplies them
+ * unevenly: `next_episode_to_air` names the coming episode when one is scheduled, and goes
+ * null in the gap between a season's episodes as well as after its finale. The episode
+ * count catches that gap - a last-aired episode short of the season's total means more are
+ * coming, whatever the missing next-episode marker implies.
+ */
+fun isStillAiring(
+    season: Season,
+    lastEpisode: EpisodeRef?,
+    nextEpisode: EpisodeRef?,
+    today: LocalDate,
+): Boolean {
+    if (!hasAired(season, today)) return false
+
+    if (nextEpisode?.seasonNumber == season.seasonNumber) return true
+
+    return lastEpisode?.seasonNumber == season.seasonNumber &&
+        lastEpisode.episodeNumber < season.episodeCount
+}
+
+/**
+ * The watched-through watermark to record when a show is first added.
+ *
+ * Following a show assumes the user is up to date, but a season halfway through its run is
+ * one nobody can be up to date with: its remaining episodes have not aired. Claiming it
+ * anyway marks the whole season watched at the moment of adding, which stays invisible
+ * while the green "next episode" label outranks it and then surfaces, once the finale airs
+ * and that label disappears, as a season the user never watched being called watched.
+ *
+ * So the assumption stops one season short of a run in progress. [initialWatermark] does
+ * not, deliberately: the season has still been announced, and lowering that one too would
+ * announce it again as news the moment the show refreshed.
+ */
+fun initialWatchedThrough(
+    seasons: List<Season>,
+    lastEpisode: EpisodeRef?,
+    nextEpisode: EpisodeRef?,
+    today: LocalDate,
+): Int {
+    val latest = latestAiredSeason(seasons, today) ?: return 0
+
+    return if (isStillAiring(latest, lastEpisode, nextEpisode, today)) {
+        // Never below zero: a show whose very first season is mid-run is simply not started.
+        (latest.seasonNumber - 1).coerceAtLeast(0)
+    } else {
+        latest.seasonNumber
+    }
+}
 
 /**
  * How many aired seasons the user has not watched.
@@ -115,8 +172,8 @@ fun isBehind(
 
 /**
  * Derive how a show should be presented. Precedence is deliberate: a season the user has
- * started outranks everything, then an unwatched aired season, since resuming and catching
- * up are the point of the app.
+ * started outranks everything, then a season still releasing episodes, then an unwatched
+ * aired season, since resuming and catching up are the point of the app.
  */
 fun showState(
     show: TrackedShow,
@@ -129,14 +186,21 @@ fun showState(
     val nextAirs = next?.airDateOrNull
     val upcoming = nextUnairedSeason(show.seasons, today)
     val upcomingAirs = upcoming?.airDateOrNull
+    val liveRun = liveRun(latest, next, today)
 
-    // Branch order is the precedence: a season already underway outranks everything, and
-    // an unwatched aired season outranks the rest.
+    // Branch order is the precedence: a season already underway outranks everything, then a
+    // run still releasing episodes, then an unwatched aired season.
     return when {
         inProgress != null -> {
             // The season in progress is itself unwatched and aired, so it is one of the
             // seasons `behind` counts; the rest is what is still waiting.
             ShowState.Watching(inProgress, behind - 1)
+        }
+
+        // Outranks Behind only while the airing season is the whole of the backlog: with
+        // older seasons waiting too, the depth is the more honest headline.
+        liveRun != null && behind <= 1 -> {
+            liveRun
         }
 
         latest != null && behind > 0 -> {
@@ -163,6 +227,27 @@ fun showState(
             ShowState.Waiting
         }
     }
+}
+
+/**
+ * The state of a season still dropping episodes, or null when no run is in flight.
+ *
+ * The next episode has to belong to the latest aired season for this to be that season
+ * continuing rather than something newer being announced over the top of it. Calling a
+ * weekly show "Season 1 out 3 days ago" describes it as a backlog, when the episode due on
+ * Thursday is the useful thing and the season cannot be caught up on yet anyway.
+ */
+private fun liveRun(
+    latest: Season?,
+    next: EpisodeRef?,
+    today: LocalDate,
+): ShowState.Airing? {
+    if (latest == null || next == null || next.seasonNumber != latest.seasonNumber) return null
+
+    val airs = next.airDateOrNull ?: return null
+    if (hasHappened(airs, today)) return null
+
+    return ShowState.Airing(next, daysBetween(today, airs))
 }
 
 /**

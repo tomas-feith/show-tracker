@@ -11,6 +11,7 @@ import com.showtracker.app.data.buildExport
 import com.showtracker.app.data.parseExport
 import com.showtracker.app.domain.ShowFetcher
 import com.showtracker.app.domain.TrackedShow
+import com.showtracker.app.domain.initialWatchedThrough
 import com.showtracker.app.domain.initialWatermark
 import com.showtracker.app.domain.latestAiredSeason
 import com.showtracker.app.domain.refreshShows
@@ -131,8 +132,10 @@ class LibraryViewModel(
     /**
      * Follow a show.
      *
-     * Both watermarks start level with the latest aired season, so following a long-running
-     * show does not immediately announce a backlog the user never asked about.
+     * The watermarks start level with the latest aired season, so following a long-running
+     * show does not immediately announce a backlog the user never asked about - except that
+     * watched-through stops one short of a season still releasing episodes, which nobody
+     * can have finished. See [initialWatchedThrough].
      */
     fun addShow(
         id: Int,
@@ -147,7 +150,16 @@ class LibraryViewModel(
                 val detail = tmdb.fetchShow(requireKey(), id)
                 val today = LocalDate.now()
                 val now = Instant.now().toString()
-                val watermark = initialWatermark(detail.seasons, today)
+                // The two watermarks part company for a show added mid-season: the airing
+                // season has been announced, but it cannot have been watched yet.
+                val announced = initialWatermark(detail.seasons, today)
+                val watched =
+                    initialWatchedThrough(
+                        detail.seasons,
+                        detail.lastEpisode,
+                        detail.nextEpisode,
+                        today,
+                    )
 
                 library.save(
                     TrackedShow(
@@ -159,8 +171,8 @@ class LibraryViewModel(
                         seasons = detail.seasons,
                         lastEpisode = detail.lastEpisode,
                         nextEpisode = detail.nextEpisode,
-                        watchedThroughSeason = watermark,
-                        knownAiredSeason = watermark,
+                        watchedThroughSeason = watched,
+                        knownAiredSeason = announced,
                         addedAt = now,
                         lastCheckedAt = now,
                     ),

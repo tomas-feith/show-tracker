@@ -45,6 +45,17 @@ you try to merge them:
 Merged into one, dismissing a notification would silently claim you had watched
 the season, and marking a season watched would suppress the alert for the next.
 
+Following a show assumes you are up to date, but only as far as a season that has
+finished. A season still releasing episodes is one nobody can be up to date with,
+so the watched-through mark stops one below it - otherwise adding a show midway
+through a run silently marks that whole season watched, which stays hidden behind
+the green "next episode" line until the finale airs and it disappears.
+
+While that run is still dropping episodes, and nothing older is waiting behind
+it, the library shows the next episode rather than the backlog: "S01E02 in 4
+days", not "Season 1 out 3 days ago". A weekly show is something to keep up with.
+With older seasons unwatched as well, the depth wins the headline again.
+
 A season counts as aired - and so as backlog - only when it has a real season
 number, a past air date, and at least one episode. All three matter:
 

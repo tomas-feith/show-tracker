@@ -237,20 +237,24 @@ class NewnessTest {
     }
 
     @Test
-    fun `prioritises an unseen new season over an upcoming episode`() {
+    fun `keeps reporting the next episode deep into a season's run`() {
+        // Deliberately changed from the React Native build, which called this "Season 2 out
+        // 2 months ago" - an unseen aired season always outranked an upcoming episode
+        // there. A season 74 days into its run is still releasing, and the episode due is
+        // the useful line; the pile-up is only a backlog once the run ends. An older
+        // unwatched season still takes the headline back, which the tests below cover.
+        val nextEpisode = EpisodeRef(2, 8, "Later", "2026-09-01")
         val state =
             showState(
                 show(
                     seasons = listOf(season(1, "2020-01-01"), season(2, "2026-06-01")),
                     watchedThroughSeason = 1,
-                    nextEpisode = EpisodeRef(2, 8, "Later", "2026-09-01"),
+                    nextEpisode = nextEpisode,
                 ),
                 today,
             )
-        assertTrue(state is ShowState.Behind)
-        state as ShowState.Behind
-        assertEquals(2, state.latest.seasonNumber)
-        assertEquals(74, state.daysAgo)
+
+        assertEquals(ShowState.Airing(nextEpisode, 18), state)
     }
 
     @Test
@@ -405,6 +409,129 @@ class NewnessTest {
                 show(id = 2, name = "Glória", status = "Ended"),
             )
         assertEquals(listOf(2, 1), sortLibrary(shows, today).map { it.id })
+    }
+
+    // --- adding a show ---
+
+    /**
+     * Reacher, as reported: season 4 premiered on 1 August with 8 episodes, two have aired
+     * and the third is due. Adding the show here must not claim season 4 was watched.
+     */
+    private val airingSeasons =
+        listOf(
+            season(1, "2022-02-04", episodeCount = 8),
+            season(2, "2023-12-15", episodeCount = 8),
+            season(3, "2025-02-20", episodeCount = 8),
+            season(4, "2026-08-01", episodeCount = 8),
+        )
+    private val airedSoFar = EpisodeRef(4, 2, "Episode 2", "2026-08-08")
+    private val dueNext = EpisodeRef(4, 3, "Episode 3", "2026-08-15")
+
+    @Test
+    fun `does not call a season watched while it is still releasing episodes`() {
+        assertEquals(
+            3,
+            initialWatchedThrough(airingSeasons, airedSoFar, dueNext, today),
+        )
+    }
+
+    @Test
+    fun `still records the airing season as announced, so it is not reported as news`() {
+        // Lowering this one too would announce season 4 on the next refresh, as though it
+        // had just dropped.
+        assertEquals(4, initialWatermark(airingSeasons, today))
+    }
+
+    @Test
+    fun `assumes a finished season was watched, as following a show always has`() {
+        val finished = airingSeasons.dropLast(1)
+        assertEquals(
+            3,
+            initialWatchedThrough(finished, EpisodeRef(3, 8, "Finale", "2025-04-10"), null, today),
+        )
+    }
+
+    @Test
+    fun `spots a run in progress when the next episode marker is missing`() {
+        // TMDB clears next_episode_to_air in the gap between episodes as well as after a
+        // finale; the episode count is what separates the two.
+        assertEquals(
+            3,
+            initialWatchedThrough(airingSeasons, airedSoFar, null, today),
+        )
+    }
+
+    @Test
+    fun `treats a season whose finale has aired as finished`() {
+        val finale = EpisodeRef(4, 8, "Episode 8", "2026-08-13")
+        assertEquals(
+            4,
+            initialWatchedThrough(airingSeasons, finale, null, today),
+        )
+    }
+
+    @Test
+    fun `does not go below not-started for a first season still airing`() {
+        val firstRun = listOf(season(1, "2026-08-01", episodeCount = 8))
+        val partway = EpisodeRef(1, 2, "Episode 2", "2026-08-08")
+        assertEquals(0, initialWatchedThrough(firstRun, partway, null, today))
+    }
+
+    @Test
+    fun `a show added mid-season still reads as backlog once the finale airs`() {
+        // The reported symptom: the green airing label used to hide a watermark that had
+        // already claimed the season, and its disappearance looked like the season being
+        // marked watched.
+        val added =
+            show(
+                seasons = airingSeasons,
+                watchedThroughSeason =
+                    initialWatchedThrough(airingSeasons, airedSoFar, dueNext, today),
+                knownAiredSeason = initialWatermark(airingSeasons, today),
+            ).copy(lastEpisode = airedSoFar, nextEpisode = null)
+
+        val afterFinale = date("2026-09-20")
+        assertEquals(1, seasonsBehind(added, afterFinale))
+        assertTrue(showState(added, afterFinale) is ShowState.Behind)
+    }
+
+    @Test
+    fun `shows the next episode, not a backlog, while a season is still dropping`() {
+        // Lanterns, as reported: season 1 premiered three days ago and runs weekly. It is
+        // a show to keep up with, not a backlog to clear.
+        val weekly = listOf(season(1, "2026-08-11", episodeCount = 8))
+        val due = EpisodeRef(1, 2, "Episode 2", "2026-08-18")
+        val lanterns =
+            show(seasons = weekly, watchedThroughSeason = 0)
+                .copy(lastEpisode = EpisodeRef(1, 1, "Episode 1", "2026-08-11"), nextEpisode = due)
+
+        assertEquals(ShowState.Airing(due, 4), showState(lanterns, today))
+    }
+
+    @Test
+    fun `a deeper backlog still outranks a run in progress`() {
+        // Three unwatched seasons with the newest still airing: the depth is the honest
+        // headline, not the episode due on Thursday.
+        val due = EpisodeRef(4, 3, "Episode 3", "2026-08-15")
+        val neglected =
+            show(seasons = airingSeasons, watchedThroughSeason = 1)
+                .copy(lastEpisode = airedSoFar, nextEpisode = due)
+
+        val state = showState(neglected, today)
+        assertTrue(state is ShowState.Behind)
+        assertEquals(3, (state as ShowState.Behind).seasonsBehind)
+    }
+
+    @Test
+    fun `an announced episode of a later season does not mask an unwatched season`() {
+        // next_episode_to_air belongs to season 4 while season 3 sits unwatched: the
+        // backlog is what matters, not the premiere of something newer.
+        val premiere = EpisodeRef(4, 1, "Episode 1", "2026-08-20")
+        val stale =
+            show(seasons = airingSeasons.dropLast(1), watchedThroughSeason = 2)
+                .copy(nextEpisode = premiere)
+
+        assertTrue(showState(stale, today) is ShowState.Behind)
     }
 
     // --- in progress ---
