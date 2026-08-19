@@ -21,9 +21,11 @@ if you are not.
 
 The play button beside an aired season marks it as the one you are partway
 through, and tapping it again clears it. A show with a season underway says
-"Watching season 4 - 2 more aired" and sorts above the rest of the library, since
-a season already started is a better answer to "what do I put on" than one never
-opened.
+"Watching season 4 - 2 more waiting" and sorts above the rest of the library,
+since a season already started is a better answer to "what do I put on" than one
+never opened. What is waiting is the rest of the backlog, which can sit below the
+season in progress as easily as above it - skipping ahead to the newest season
+leaves the older ones waiting.
 
 That marker is a third piece of state rather than a half-step on
 `watchedThroughSeason`, because "started season 4" and "finished season 3" are

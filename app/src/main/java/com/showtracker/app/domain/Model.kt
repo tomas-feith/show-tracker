@@ -139,12 +139,15 @@ sealed interface ShowState {
      * A season the user has started and not finished. Outranks [Behind], because a season
      * already underway is a better answer to "what do I put on" than one never started.
      *
-     * [seasonsAfter] counts the aired seasons above this one, so the row can still say how
-     * much is waiting once it is finished.
+     * [seasonsWaiting] is the rest of the backlog: every aired, unwatched season other than
+     * this one, so the row can still say how much is left once it is finished. Counted
+     * against the watermark rather than against this season's number, because a backlog can
+     * sit below the season in progress as easily as above it - someone who skips ahead to
+     * the newest season still has the older ones waiting.
      */
     data class Watching(
         val season: Season,
-        val seasonsAfter: Int,
+        val seasonsWaiting: Int,
     ) : ShowState
 
     /** Aired seasons the user has not watched. [seasonsBehind] is at least 1. */

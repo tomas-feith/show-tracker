@@ -134,13 +134,9 @@ fun showState(
     // an unwatched aired season outranks the rest.
     return when {
         inProgress != null -> {
-            ShowState.Watching(
-                season = inProgress,
-                seasonsAfter =
-                    show.seasons.count {
-                        hasAired(it, today) && it.seasonNumber > inProgress.seasonNumber
-                    },
-            )
+            // The season in progress is itself unwatched and aired, so it is one of the
+            // seasons `behind` counts; the rest is what is still waiting.
+            ShowState.Watching(inProgress, behind - 1)
         }
 
         latest != null && behind > 0 -> {

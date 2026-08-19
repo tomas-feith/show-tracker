@@ -465,7 +465,38 @@ class NewnessTest {
         state as ShowState.Watching
         assertEquals(1, state.season.seasonNumber)
         // Seasons 2 and 3 are still waiting once season 1 is finished.
-        assertEquals(2, state.seasonsAfter)
+        assertEquals(2, state.seasonsWaiting)
+    }
+
+    @Test
+    fun `counts a backlog below the season in progress as still waiting`() {
+        // Someone who skips ahead to the newest season still has the older ones waiting.
+        // Counting only what sits above season 3 would report nothing left.
+        val seasons =
+            listOf(
+                season(1, "2020-01-01"),
+                season(2, "2021-01-01"),
+                season(3, "2022-01-01"),
+            )
+        val state =
+            showState(
+                show(seasons = seasons, watchedThroughSeason = 0, inProgressSeason = 3),
+                today,
+            )
+
+        assertEquals(ShowState.Watching(seasons[2], 2), state)
+    }
+
+    @Test
+    fun `never reports a negative remainder`() {
+        val seasons = listOf(season(1, "2020-01-01"))
+        val state =
+            showState(
+                show(seasons = seasons, watchedThroughSeason = 0, inProgressSeason = 1),
+                today,
+            )
+
+        assertEquals(ShowState.Watching(seasons[0], 0), state)
     }
 
     @Test

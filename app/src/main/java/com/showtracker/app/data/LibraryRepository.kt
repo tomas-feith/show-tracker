@@ -54,17 +54,15 @@ class LibraryRepository(
     /**
      * Record that the user is partway through [season], or clear the marker with null.
      *
-     * A season already at or below the watched-through watermark cannot be in progress -
-     * it is finished - so the marker is refused rather than written, which keeps the
-     * database from holding a state `seasonInProgress` would only ignore.
+     * A season already at or below the watched-through watermark cannot be in progress - it
+     * is finished - and [ShowDao.setInProgressSeason] enforces that against the stored
+     * watermark within the one statement.
      */
     suspend fun setInProgress(
         id: Int,
         season: Int?,
     ) {
-        val show = dao.getById(id)?.show ?: return
-        val marker = season?.takeIf { it > show.watchedThroughSeason }
-        dao.setInProgressSeason(id, marker)
+        dao.setInProgressSeason(id, season)
     }
 
     /**

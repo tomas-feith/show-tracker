@@ -111,6 +111,21 @@ class LibraryImportTest {
     }
 
     @Test
+    fun `drops an imported marker the watermark has already passed`() {
+        // An import writes straight to the database, so a hand-edited or future-written
+        // file is the one way a marker on a finished season could get stored.
+        val text =
+            """
+            {"format":"showtracker-export","version":1,"shows":[
+              {"id":7,"name":"Finished","addedAt":"2026-01-01T00:00:00.000Z",
+               "watchedThroughSeason":3,"inProgressSeason":3}
+            ]}
+            """.trimIndent()
+        val result = parseExport(text) as ImportResult.Success
+        assertNull(result.shows.single().inProgressSeason)
+    }
+
+    @Test
     fun `refuses a file that is not an export`() {
         val result = parseExport("""{"format":"something-else","version":1,"shows":[]}""")
         assertTrue(result is ImportResult.Failure)

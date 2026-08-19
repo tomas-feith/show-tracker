@@ -145,8 +145,12 @@ fun parseExport(text: String): ImportResult {
     return ImportResult.Success(shows, payload.lastCheckedAt)
 }
 
-internal fun ShowPayload.toDomain(): TrackedShow =
-    TrackedShow(
+internal fun ShowPayload.toDomain(): TrackedShow {
+    // `?:` rather than a truthiness check, so a deliberate 0 ("not started") survives the
+    // import instead of being replaced by the legacy value.
+    val watched = watchedThroughSeason ?: legacyWatermark ?: 0
+
+    return TrackedShow(
         id = id,
         name = name,
         posterPath = posterPath,
@@ -155,16 +159,18 @@ internal fun ShowPayload.toDomain(): TrackedShow =
         seasons = seasons.map { Season(it.seasonNumber, it.name, it.airDate, it.episodeCount) },
         lastEpisode = lastEpisode?.toDomain(),
         nextEpisode = nextEpisode?.toDomain(),
-        // `?:` rather than a truthiness check, so a deliberate 0 ("not started") survives
-        // the import instead of being replaced by the legacy value.
-        watchedThroughSeason = watchedThroughSeason ?: legacyWatermark ?: 0,
+        watchedThroughSeason = watched,
         // Null is meaningful here rather than a missing value to substitute for, so no
-        // fallback: an older file simply has nothing in progress.
-        inProgressSeason = inProgressSeason,
+        // fallback: an older file simply has nothing in progress. A marker the watermark
+        // has already passed is dropped, since an import writes straight to the database
+        // and would otherwise store a state every reader ignores - which the app itself
+        // refuses to write.
+        inProgressSeason = inProgressSeason?.takeIf { it > watched },
         knownAiredSeason = knownAiredSeason ?: legacyWatermark ?: 0,
         addedAt = addedAt,
         lastCheckedAt = lastCheckedAt,
     )
+}
 
 internal fun EpisodePayload.toDomain(): EpisodeRef =
     EpisodeRef(seasonNumber, episodeNumber, name, airDate)

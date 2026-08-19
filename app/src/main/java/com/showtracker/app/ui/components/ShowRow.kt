@@ -94,11 +94,11 @@ private fun label(
         is ShowState.Watching -> {
             StateLabel(
                 text =
-                    if (state.seasonsAfter == 0) {
+                    if (state.seasonsWaiting == 0) {
                         "Watching season ${state.season.seasonNumber}"
                     } else {
                         "Watching season ${state.season.seasonNumber} - " +
-                            "${state.seasonsAfter} more aired"
+                            "${state.seasonsWaiting} more waiting"
                     },
                 color = StateAiring,
             )

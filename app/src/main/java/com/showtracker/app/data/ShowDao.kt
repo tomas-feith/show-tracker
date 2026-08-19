@@ -66,8 +66,25 @@ interface ShowDao {
         season: Int,
     )
 
-    /** Set or clear the season the user is partway through. Null means nothing in progress. */
-    @Query("UPDATE shows SET inProgressSeason = :season WHERE id = :id")
+    /**
+     * Set or clear the season the user is partway through. Null means nothing in progress.
+     *
+     * The watermark check is inside the statement rather than a read before it: a season at
+     * or below the watched-through mark is finished, not underway, so it clears the marker
+     * instead of storing a state every reader would only ignore. Doing that as a read and
+     * then a write would leave a window where a concurrent `setWatchedThrough` decided the
+     * comparison was against a watermark that no longer applies.
+     *
+     * A null [season] fails the comparison too, which is exactly the clear it asks for.
+     */
+    @Query(
+        """
+        UPDATE shows
+        SET inProgressSeason =
+            CASE WHEN :season > watchedThroughSeason THEN :season ELSE NULL END
+        WHERE id = :id
+        """,
+    )
     suspend fun setInProgressSeason(
         id: Int,
         season: Int?,
