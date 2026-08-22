@@ -6,10 +6,12 @@ import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import com.showtracker.app.data.BackupFolder
 import com.showtracker.app.data.LibraryRepository
 import com.showtracker.app.data.Settings
 import com.showtracker.app.data.ShowDatabase
 import com.showtracker.app.network.TmdbClient
+import com.showtracker.app.notify.BackupSchedule
 import com.showtracker.app.notify.RefreshWorker
 import com.showtracker.app.notify.ensureChannel
 import okhttp3.OkHttpClient
@@ -24,6 +26,12 @@ import okhttp3.OkHttpClient
 class AppContainer(
     context: Context,
 ) {
+    /**
+     * Application context, kept for the pieces that schedule work rather than talk to a
+     * database. Held as `applicationContext` explicitly so nothing can pin an activity.
+     */
+    val appContext: Context = context.applicationContext
+
     val http: OkHttpClient by lazy { TmdbClient.defaultClient() }
 
     val tmdb: TmdbClient by lazy { TmdbClient(http) }
@@ -33,6 +41,10 @@ class AppContainer(
     val library: LibraryRepository by lazy {
         LibraryRepository(ShowDatabase.get(context).showDao())
     }
+
+    val backups: BackupFolder by lazy { BackupFolder(context) }
+
+    val backupSchedule: BackupSchedule by lazy { BackupSchedule(appContext) }
 }
 
 class ShowTrackerApplication :

@@ -7,12 +7,27 @@
     are identical. A direct phone-to-phone transfer never leaves the user's hands whereas a
     cloud backup does, so the day those policies should differ, the structure is already
     there and the change has to be deliberate.
+
+    The -wal and -shm files are listed alongside the database, and this is not optional.
+    Room runs in write-ahead logging mode, so a committed transaction lives in shows.db-wal
+    until a checkpoint folds it into shows.db. Backing up shows.db alone captures the
+    database as of the last checkpoint and silently loses everything since - which can be
+    the entire library: a freshly populated one was measured at 4 KB in shows.db against
+    194 KB in shows.db-wal, so that backup would have restored almost nothing.
+
+    LibraryBackupAgent checkpoints before the copy, which is what actually makes the
+    snapshot consistent. These entries are the belt to that agent's braces, for the paths
+    where the agent does not run.
 -->
 <data-extraction-rules>
     <cloud-backup>
         <include domain="database" path="shows.db" />
+        <include domain="database" path="shows.db-wal" />
+        <include domain="database" path="shows.db-shm" />
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="shows.db" />
+        <include domain="database" path="shows.db-wal" />
+        <include domain="database" path="shows.db-shm" />
     </device-transfer>
 </data-extraction-rules>

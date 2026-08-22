@@ -1,12 +1,15 @@
 package com.showtracker.app.ui
 
+import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.showtracker.app.AppContainer
+import com.showtracker.app.data.BackupFolder
 import com.showtracker.app.data.ImportResult
 import com.showtracker.app.data.LibraryRepository
 import com.showtracker.app.data.Settings
+import com.showtracker.app.data.backupFileName
 import com.showtracker.app.data.buildExport
 import com.showtracker.app.data.parseExport
 import com.showtracker.app.domain.ShowFetcher
@@ -16,6 +19,7 @@ import com.showtracker.app.domain.initialWatermark
 import com.showtracker.app.domain.latestAiredSeason
 import com.showtracker.app.domain.refreshShows
 import com.showtracker.app.network.TmdbClient
+import com.showtracker.app.notify.BackupSchedule
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +31,7 @@ import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 /** Everything the library screen needs, in one snapshot. */
 data class LibraryUiState(
@@ -40,6 +45,8 @@ class LibraryViewModel(
     private val library: LibraryRepository,
     private val settings: Settings,
     private val tmdb: TmdbClient,
+    private val backups: BackupFolder,
+    private val backupSchedule: BackupSchedule,
 ) : ViewModel() {
     private val fetcher = ShowFetcher { ids -> tmdb.fetchShows(requireKey(), ids) }
 
@@ -246,6 +253,62 @@ class LibraryViewModel(
         settings.clearApiKey()
     }
 
+    // --- scheduled backups ---
+
+    val backupFolder = settings.backupFolder
+    val lastBackupAt = settings.lastBackupAt
+    val lastBackupError = settings.lastBackupError
+
+    /**
+     * Point scheduled backups at [uri] and restart the schedule.
+     *
+     * Cancel then schedule, rather than letting the periodic request be replaced in place:
+     * the user has just chosen a folder and expects the next run to be measured from now,
+     * not to inherit whatever was left of the previous folder's day.
+     */
+    suspend fun setBackupFolder(uri: String) {
+        settings.setBackupFolder(uri)
+        backupSchedule.restart()
+    }
+
+    suspend fun clearBackupFolder() {
+        settings.clearBackupFolder()
+        backupSchedule.stop()
+    }
+
+    /**
+     * Write one backup immediately.
+     *
+     * Reports through callbacks rather than a state flow because this section is the only
+     * caller and it already owns the message it shows; threading another field through the
+     * shared library state would put a transient settings message in every screen's
+     * snapshot.
+     */
+    fun backUpNow(
+        onDone: (String) -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        viewModelScope.launch {
+            catchingUserFacing {
+                val folder =
+                    settings.currentBackupFolder()
+                        ?: error("No backup folder chosen yet.")
+                val shows = library.all()
+                if (shows.isEmpty()) error("There is nothing to back up yet.")
+
+                val name =
+                    backups.write(
+                        folder.toUri(),
+                        backupFileName(LocalDateTime.now()),
+                        buildExport(shows, settings.currentLastCheckedAt(), Instant.now()),
+                    )
+                settings.recordBackupSuccess(Instant.now().toString())
+                name
+            }.onSuccess { onDone("Saved $it.") }
+                .onFailure { onError(it.message ?: "Backup failed.") }
+        }
+    }
+
     companion object {
         private const val STOP_TIMEOUT_MS = 5_000L
         private val STALE_AFTER: Duration = Duration.ofHours(6)
@@ -258,6 +321,8 @@ class LibraryViewModel(
                         container.library,
                         container.settings,
                         container.tmdb,
+                        container.backups,
+                        container.backupSchedule,
                     ) as T
             }
     }
