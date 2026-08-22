@@ -11,6 +11,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.showtracker.app.AppContainer
 import com.showtracker.app.ui.detail.DetailScreen
+import com.showtracker.app.ui.discover.DiscoverScreen
+import com.showtracker.app.ui.discover.DiscoverViewModel
 import com.showtracker.app.ui.library.LibraryScreen
 import com.showtracker.app.ui.search.SearchScreen
 import com.showtracker.app.ui.search.SearchViewModel
@@ -19,6 +21,7 @@ import com.showtracker.app.ui.settings.SettingsScreen
 private object Routes {
     const val LIBRARY = "library"
     const val SEARCH = "search"
+    const val DISCOVER = "discover"
     const val SETTINGS = "settings"
     const val DETAIL = "detail/{showId}"
 
@@ -36,6 +39,11 @@ fun ShowTrackerNavHost(
     val libraryViewModel: LibraryViewModel =
         viewModel(factory = LibraryViewModel.factory(container))
 
+    // Also activity-scoped, so the suggestions survive opening a show and coming back.
+    // Rebuilding them per visit would mean one TMDB request per followed show every time.
+    val discoverViewModel: DiscoverViewModel =
+        viewModel(factory = DiscoverViewModel.factory(container))
+
     // Refresh when the app comes to the foreground, not only on first composition. The
     // periodic worker is best-effort, so this is what actually keeps the library current.
     LifecycleResumeEffect(Unit) {
@@ -49,6 +57,7 @@ fun ShowTrackerNavHost(
                 viewModel = libraryViewModel,
                 onOpenShow = { navController.navigate(Routes.detail(it)) },
                 onAddShow = { navController.navigate(Routes.SEARCH) },
+                onDiscover = { navController.navigate(Routes.DISCOVER) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
             )
         }
@@ -58,6 +67,14 @@ fun ShowTrackerNavHost(
                 viewModel(factory = SearchViewModel.factory(container))
             SearchScreen(
                 searchViewModel = searchViewModel,
+                libraryViewModel = libraryViewModel,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(Routes.DISCOVER) {
+            DiscoverScreen(
+                viewModel = discoverViewModel,
                 libraryViewModel = libraryViewModel,
                 onBack = { navController.popBackStack() },
             )

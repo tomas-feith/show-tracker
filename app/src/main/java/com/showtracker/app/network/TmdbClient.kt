@@ -75,6 +75,10 @@ class TmdbClient(
         /** How many shows a library refresh fetches at once. */
         const val DEFAULT_CONCURRENCY = 5
 
+        /** Time windows TMDB accepts on `/trending`. */
+        const val TRENDING_WEEK = "week"
+        const val TRENDING_DAY = "day"
+
         private const val CONNECT_TIMEOUT_SECONDS = 10L
 
         /**
@@ -157,16 +161,37 @@ class TmdbClient(
                 mapOf("query" to trimmed, "include_adult" to "false"),
             )
 
-        return data.results.map {
-            SearchResult(
-                id = it.id,
-                name = it.name,
-                overview = it.overview,
-                posterPath = it.posterPath,
-                firstAirDate = cleanDate(it.firstAirDate),
-            )
-        }
+        return data.results.map { it.toDomain() }
     }
+
+    /**
+     * TMDB's own recommendations for one show.
+     *
+     * The first page only. It is ordered by TMDB's confidence, so page two is the tail of a
+     * list whose head we are already about to re-rank against every other show in the
+     * library - and each extra page is another request per library show.
+     */
+    suspend fun recommendationsFor(
+        key: String,
+        id: Int,
+    ): List<SearchResult> =
+        request<SearchResponse>(key, "/tv/$id/recommendations")
+            .results
+            .map { it.toDomain() }
+
+    /**
+     * What is trending on TMDB right now, across everyone - no library involved.
+     *
+     * [window] is `day` or `week`; week is steadier, a day's list swings on a single
+     * premiere.
+     */
+    suspend fun trendingShows(
+        key: String,
+        window: String = TRENDING_WEEK,
+    ): List<SearchResult> =
+        request<SearchResponse>(key, "/trending/tv/$window")
+            .results
+            .map { it.toDomain() }
 
     /** Fetch full detail for one show, including its season list. */
     suspend fun fetchShow(
@@ -191,13 +216,33 @@ class TmdbClient(
         key: String,
         ids: List<Int>,
         concurrency: Int = DEFAULT_CONCURRENCY,
-    ): Map<Int, Result<ShowDetail>> =
+    ): Map<Int, Result<ShowDetail>> = fanOut(ids, concurrency) { fetchShow(key, it) }
+
+    /**
+     * Recommendations for many shows at once, on the same terms as [fetchShows]: bounded
+     * concurrency, and one failure captured rather than thrown, because a suggestion list
+     * built from nine of ten libraries shows is still worth showing.
+     */
+    suspend fun fetchRecommendations(
+        key: String,
+        ids: List<Int>,
+        concurrency: Int = DEFAULT_CONCURRENCY,
+    ): Map<Int, Result<List<SearchResult>>> =
+        fanOut(ids, concurrency) { recommendationsFor(key, it) }
+
+    /** The shared bounded fan-out. See [fetchShows] for why it is shaped this way. */
+    private suspend fun <T> fanOut(
+        ids: List<Int>,
+        concurrency: Int,
+        fetch: suspend (Int) -> T,
+    ): Map<Int, Result<T>> =
         coroutineScope {
             val gate = Semaphore(concurrency.coerceAtLeast(1))
             ids
+                .distinct()
                 .map { id ->
                     async {
-                        id to gate.withPermit { runCatching { fetchShow(key, id) } }
+                        id to gate.withPermit { runCatching { fetch(id) } }
                     }
                 }.awaitAll()
                 .toMap()
@@ -218,7 +263,20 @@ private data class SearchItem(
     val overview: String = "",
     @SerialName("poster_path") val posterPath: String? = null,
     @SerialName("first_air_date") val firstAirDate: String? = null,
-)
+    @SerialName("vote_average") val voteAverage: Double = 0.0,
+    @SerialName("vote_count") val voteCount: Int = 0,
+) {
+    fun toDomain(): SearchResult =
+        SearchResult(
+            id = id,
+            name = name,
+            overview = overview,
+            posterPath = posterPath,
+            firstAirDate = cleanDate(firstAirDate),
+            voteAverage = voteAverage,
+            voteCount = voteCount,
+        )
+}
 
 @Serializable
 private data class ConfigurationResponse(

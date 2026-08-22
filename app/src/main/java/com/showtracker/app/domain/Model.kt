@@ -57,13 +57,21 @@ data class ShowDetail(
     val nextEpisode: EpisodeRef?,
 )
 
-/** A search hit, which carries less data than a full detail fetch. */
+/**
+ * A search hit, which carries less data than a full detail fetch.
+ *
+ * Also what the recommendation and trending lists return - TMDB gives all three the same
+ * shape. The vote fields are only read when ranking suggestions, and default so that a
+ * payload without them (or a caller building one in a test) is still valid.
+ */
 data class SearchResult(
     val id: Int,
     val name: String,
     val overview: String,
     val posterPath: String?,
     val firstAirDate: String?,
+    val voteAverage: Double = 0.0,
+    val voteCount: Int = 0,
 )
 
 /**

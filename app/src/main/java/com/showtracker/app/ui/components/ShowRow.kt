@@ -1,6 +1,7 @@
 package com.showtracker.app.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -209,6 +213,64 @@ fun ShowRow(
                     .background(StateNew)
                     // Announced as part of the row's own description instead.
                     .clearAndSetSemantics { },
+            )
+        }
+    }
+}
+
+/**
+ * A row for a show that is not (yet) in the library: a search hit, a suggestion, a trending
+ * entry.
+ *
+ * Distinct from [ShowRow], which renders a followed show's progress. Here there is no
+ * progress to render - the second line is whatever the calling screen wants to say about
+ * why the show is on it - and the trailing tick means "already following" rather than
+ * anything about watching.
+ */
+@Composable
+fun ResultRow(
+    name: String,
+    posterPath: String?,
+    subtitle: String,
+    tracked: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    subtitleColor: Color = TextMuted,
+) {
+    Row(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clickable(enabled = !tracked, onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Poster(posterPath)
+
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = subtitleColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        if (tracked) {
+            Icon(
+                Icons.Default.Check,
+                contentDescription = "Already following",
+                tint = StateAiring,
             )
         }
     }

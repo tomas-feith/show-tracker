@@ -193,6 +193,67 @@ class TmdbClientTest {
         }
 
     @Test
+    fun `parses a recommendation list, votes included`() =
+        runTest {
+            enqueue(
+                """
+                {"results":[
+                  {"id":7,"name":"Dark","poster_path":"/d.jpg","first_air_date":"2017-12-01",
+                   "vote_average":8.4,"vote_count":4321}
+                ]}
+                """.trimIndent(),
+            )
+            val results = client.recommendationsFor(v3Key, 1396)
+
+            assertEquals(1, results.size)
+            // The votes are what the ranking's tiebreak reads, so a missed @SerialName here
+            // would silently flatten every suggestion to the same score.
+            assertEquals(8.4, results.single().voteAverage, 0.001)
+            assertEquals(4321, results.single().voteCount)
+            assertEquals("/3/tv/1396/recommendations", server.takeRequest().requestUrl?.encodedPath)
+        }
+
+    @Test
+    fun `defaults the votes when TMDB omits them`() =
+        runTest {
+            enqueue("""{"results":[{"id":7,"name":"Dark"}]}""")
+            val single = client.recommendationsFor(v3Key, 1).single()
+            assertEquals(0.0, single.voteAverage, 0.001)
+            assertEquals(0, single.voteCount)
+        }
+
+    @Test
+    fun `asks for the weekly trending window by default`() =
+        runTest {
+            enqueue("""{"results":[{"id":7,"name":"Dark"}]}""")
+            client.trendingShows(v3Key)
+            assertEquals("/3/trending/tv/week", server.takeRequest().requestUrl?.encodedPath)
+        }
+
+    @Test
+    fun `fetches recommendations for many shows, keeping one failure from losing the rest`() =
+        runTest {
+            enqueue("""{"results":[{"id":7,"name":"Dark"}]}""")
+            enqueue("", code = 503)
+
+            val results = client.fetchRecommendations(v3Key, listOf(1, 2), concurrency = 1)
+
+            assertEquals(setOf(1, 2), results.keys)
+            assertEquals(1, results.getValue(1).getOrNull()?.size)
+            assertTrue(results.getValue(2).isFailure)
+        }
+
+    @Test
+    fun `does not request the same id twice in one fan-out`() =
+        runTest {
+            enqueue(detailJson)
+            val results = client.fetchShows(v3Key, listOf(1396, 1396), concurrency = 1)
+
+            assertEquals(setOf(1396), results.keys)
+            assertEquals(1, server.requestCount)
+        }
+
+    @Test
     fun `fetches an empty id list without touching the network`() =
         runTest {
             assertEquals(emptyMap<Int, Any>(), client.fetchShows(v3Key, emptyList()))

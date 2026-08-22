@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -61,6 +62,7 @@ fun LibraryScreen(
     viewModel: LibraryViewModel,
     onOpenShow: (Int) -> Unit,
     onAddShow: () -> Unit,
+    onDiscover: () -> Unit,
     onOpenSettings: () -> Unit,
     today: LocalDate = LocalDate.now(),
 ) {
@@ -107,6 +109,17 @@ fun LibraryScreen(
                                 if (searching) Icons.Default.Close else Icons.Default.Search,
                                 contentDescription =
                                     if (searching) "Close search" else "Search your shows",
+                                tint = TextMuted,
+                            )
+                        }
+                    }
+                    // Only with a key: every destination behind it is a TMDB call, and an
+                    // empty screen saying so is worse than not offering the trip.
+                    if (state.apiKey != null) {
+                        IconButton(onClick = onDiscover) {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = "Discover shows",
                                 tint = TextMuted,
                             )
                         }
