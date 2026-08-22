@@ -99,9 +99,26 @@ class LibraryViewModel(
 
             val last =
                 ready.lastCheckedAt?.let { runCatching { Instant.parse(it) }.getOrNull() }
-            if (last == null || Duration.between(last, now) > STALE_AFTER) refresh(now)
+            val stale = last == null || Duration.between(last, now) > STALE_AFTER
+
+            if (stale || needsBackfill(ready.shows)) refresh(now)
         }
     }
+
+    /**
+     * True immediately after an upgrade that added a stored field nothing has filled yet.
+     *
+     * The synopsis column arrived at schema version 3 as `""` for every existing row, and
+     * would otherwise stay blank until the library happened to go stale - up to six hours
+     * of a feature looking broken on a screen the user just updated to get it.
+     *
+     * Deliberately `all` and not `any`: TMDB genuinely has no synopsis for some shows, so
+     * `any` would re-refresh on every single app open, for ever, on account of one such
+     * show. Once one refresh has run, any show with a synopsis makes this false and it
+     * never fires again.
+     */
+    private fun needsBackfill(shows: List<TrackedShow>): Boolean =
+        shows.isNotEmpty() && shows.all { it.overview.isBlank() }
 
     fun refresh(
         now: Instant = Instant.now(),
