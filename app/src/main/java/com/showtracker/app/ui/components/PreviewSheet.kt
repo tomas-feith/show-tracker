@@ -1,4 +1,4 @@
-package com.showtracker.app.ui.discover
+package com.showtracker.app.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import com.showtracker.app.domain.ShowDetail
 import com.showtracker.app.domain.formatEpisode
 import com.showtracker.app.domain.realSeasons
-import com.showtracker.app.ui.components.Poster
 import com.showtracker.app.ui.theme.Accent
 import com.showtracker.app.ui.theme.Danger
 import com.showtracker.app.ui.theme.StateAiring
@@ -48,8 +47,13 @@ fun PreviewSheet(
     preview: Preview,
     alreadyFollowing: Boolean,
     onFollow: () -> Unit,
-    onDismissShow: () -> Unit,
     onClose: () -> Unit,
+    /**
+     * Offered only where hiding a show means something. Search is somewhere the user went
+     * looking for a specific title, so "never suggest this" would be answering a question
+     * they did not ask.
+     */
+    onDismissShow: (() -> Unit)? = null,
 ) {
     ModalBottomSheet(
         onDismissRequest = onClose,
@@ -163,7 +167,7 @@ private fun Actions(
     alreadyFollowing: Boolean,
     loading: Boolean,
     onFollow: () -> Unit,
-    onDismissShow: () -> Unit,
+    onDismissShow: (() -> Unit)?,
 ) {
     if (alreadyFollowing) {
         Text(
@@ -186,6 +190,8 @@ private fun Actions(
         Text("Follow this show")
     }
 
+    if (onDismissShow == null) return
+
     OutlinedButton(
         onClick = onDismissShow,
         enabled = !loading,
@@ -195,8 +201,8 @@ private fun Actions(
     }
 
     Text(
-        "\"Not interested\" hides this show from suggestions for good. It has no effect " +
-            "on search - you can still follow it later.",
+        "\"Not interested\" hides this show from suggestions. It has no effect on search, " +
+            "and Settings lists what is hidden if you change your mind.",
         style = MaterialTheme.typography.bodySmall,
         color = TextFaint,
     )

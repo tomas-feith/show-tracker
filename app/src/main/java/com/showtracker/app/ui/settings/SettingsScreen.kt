@@ -176,6 +176,8 @@ fun SettingsScreen(
 
             BackupSection(viewModel)
 
+            DismissedSection(viewModel)
+
             Text(
                 "Following ${state.shows.size} " +
                     if (state.shows.size == 1) "show." else "shows.",

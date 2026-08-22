@@ -46,6 +46,9 @@ interface ShowDao {
     @Query("SELECT id FROM dismissed")
     fun observeDismissed(): Flow<List<Int>>
 
+    @Query("SELECT * FROM dismissed ORDER BY dismissedAt DESC")
+    fun observeDismissedEntries(): Flow<List<DismissedEntity>>
+
     @Query("SELECT id FROM dismissed")
     suspend fun dismissedIds(): List<Int>
 

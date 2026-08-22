@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.showtracker.app.ui.LibraryViewModel
 import com.showtracker.app.ui.components.Divider
+import com.showtracker.app.ui.components.PreviewSheet
 import com.showtracker.app.ui.components.ResultRow
 import com.showtracker.app.ui.theme.Danger
 import com.showtracker.app.ui.theme.Surface
@@ -41,6 +42,7 @@ fun SearchScreen(
     onBack: () -> Unit,
 ) {
     val state by searchViewModel.state.collectAsStateWithLifecycle()
+    val preview by searchViewModel.preview.collectAsStateWithLifecycle()
     val library by libraryViewModel.state.collectAsStateWithLifecycle()
     val tracked = library.shows.map { it.id }.toSet()
 
@@ -97,13 +99,24 @@ fun SearchScreen(
                         posterPath = result.posterPath,
                         subtitle = result.firstAirDate?.take(4) ?: "Date unknown",
                         tracked = result.id in tracked,
-                        onClick = {
-                            libraryViewModel.addShow(result.id, searchViewModel::showError)
-                        },
+                        onClick = { searchViewModel.openPreview(result) },
                     )
                     Divider()
                 }
             }
         }
+    }
+
+    preview?.let { showing ->
+        PreviewSheet(
+            preview = showing,
+            alreadyFollowing = showing.id in tracked,
+            onFollow = {
+                libraryViewModel.addShow(showing.id, searchViewModel::showError)
+                searchViewModel.closePreview()
+            },
+            onClose = searchViewModel::closePreview,
+            // No "not interested" here: see PreviewSheet.
+        )
     }
 }

@@ -271,6 +271,26 @@ class LibraryViewModel(
         settings.clearApiKey()
     }
 
+    // --- hidden suggestions ---
+
+    val dismissedShows = library.observeDismissedShows()
+
+    /**
+     * Un-hide one show.
+     *
+     * The suggestion does not come back immediately: "For you" holds its ranked pool for
+     * the session, so this takes effect on the next full refresh. Saying so on the button
+     * would be noise - the user's intent is "stop hiding this", and that is exactly what
+     * has happened.
+     */
+    fun restoreDismissed(id: Int) {
+        viewModelScope.launch { library.undismiss(id) }
+    }
+
+    fun restoreAllDismissed() {
+        viewModelScope.launch { library.clearDismissed() }
+    }
+
     // --- scheduled backups ---
 
     val backupFolder = settings.backupFolder

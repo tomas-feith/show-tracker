@@ -134,6 +134,19 @@ data class TrackedShow(
     val lastCheckedAt: String? = null,
 )
 
+/**
+ * A suggestion the user turned down, as the settings screen lists it.
+ *
+ * The name is carried rather than re-fetched: this list exists to be reversed, and a row
+ * reading "Show #71912" asks the user to undo a decision they cannot identify.
+ */
+data class DismissedShow(
+    val id: Int,
+    val name: String,
+    /** ISO timestamp. */
+    val dismissedAt: String,
+)
+
 /** A season that appeared between two refreshes and is above the watermark. */
 data class Discovery(
     val show: TrackedShow,

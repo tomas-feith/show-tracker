@@ -16,7 +16,7 @@ abstract class ShowDatabase : RoomDatabase() {
     abstract fun showDao(): ShowDao
 
     companion object {
-        const val VERSION = 3
+        const val VERSION = 4
 
         const val NAME = "shows.db"
 
@@ -58,6 +58,22 @@ abstract class ShowDatabase : RoomDatabase() {
             }
 
         /**
+         * Adds `dismissed.name`, so hidden shows can be listed and un-hidden by name.
+         *
+         * The table arrived one version ago and is empty on most installs, but the column
+         * is added rather than the table recreated: a dismissal the user has already made
+         * is a decision worth keeping, even if it comes back with a blank name.
+         */
+        private val MIGRATION_3_4 =
+            object : Migration(3, 4) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "ALTER TABLE dismissed ADD COLUMN name TEXT NOT NULL DEFAULT ''",
+                    )
+                }
+            }
+
+        /**
          * Schema migrations, oldest first.
          *
          * Destructive fallback is deliberately never enabled. Most of what this database
@@ -74,7 +90,8 @@ abstract class ShowDatabase : RoomDatabase() {
          * reason: they are what the migration test diffs against.
          */
 
-        val MIGRATIONS: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3)
+        val MIGRATIONS: List<Migration> =
+            listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
         @Volatile
         private var instance: ShowDatabase? = null

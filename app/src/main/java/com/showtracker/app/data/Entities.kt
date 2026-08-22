@@ -168,6 +168,16 @@ fun TrackedShow.toEntity(): ShowEntity =
 @Entity(tableName = "dismissed")
 data class DismissedEntity(
     @PrimaryKey val id: Int,
+    /**
+     * The show's name as it was when dismissed.
+     *
+     * Stored rather than looked up, so the "hidden shows" list can be rendered offline and
+     * without a TMDB request per entry. A dismissal is a decision about a name the user
+     * read; keeping that name is also what makes undoing one an informed choice rather
+     * than a guess at an id. Added at schema version 4; "" for rows dismissed before it.
+     */
+    @ColumnInfo(defaultValue = "")
+    val name: String,
     val dismissedAt: String,
 )
 

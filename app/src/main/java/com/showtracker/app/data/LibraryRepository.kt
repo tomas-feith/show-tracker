@@ -1,5 +1,6 @@
 package com.showtracker.app.data
 
+import com.showtracker.app.domain.DismissedShow
 import com.showtracker.app.domain.TrackedShow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -26,11 +27,18 @@ class LibraryRepository(
 
     suspend fun dismissedIds(): Set<Int> = dao.dismissedIds().toSet()
 
+    /** Hidden shows, newest first, for the list that offers to un-hide them. */
+    fun observeDismissedShows(): Flow<List<DismissedShow>> =
+        dao.observeDismissedEntries().map { entries ->
+            entries.map { DismissedShow(it.id, it.name, it.dismissedAt) }
+        }
+
     suspend fun dismiss(
         id: Int,
+        name: String,
         at: String,
     ) {
-        dao.dismiss(DismissedEntity(id, at))
+        dao.dismiss(DismissedEntity(id, name, at))
     }
 
     suspend fun undismiss(id: Int) {

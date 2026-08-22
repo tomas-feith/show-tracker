@@ -120,6 +120,32 @@ class MigrationTest {
         }
     }
 
+    /**
+     * Adding `dismissed.name` must keep the dismissals already made.
+     *
+     * A dismissal is a decision the user made, so the row survives the upgrade even though
+     * it comes back with a blank name - which the settings list renders as the id rather
+     * than as an empty row with a button.
+     */
+    @Test
+    @Throws(IOException::class)
+    fun addingDismissedNameKeepsExistingDismissals() {
+        helper.createDatabase(TEST_DB, 3).use { db ->
+            db.execSQL(
+                "INSERT INTO dismissed (id, dismissedAt) VALUES (42, '2026-08-22T10:00:00Z')",
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 4, true, *MIGRATIONS)
+
+        db.query("SELECT id, name, dismissedAt FROM dismissed WHERE id = 42").use { cursor ->
+            assertTrue("the dismissal did not survive the migration", cursor.moveToFirst())
+            assertEquals(42, cursor.getInt(0))
+            assertEquals("", cursor.getString(1))
+            assertEquals("2026-08-22T10:00:00Z", cursor.getString(2))
+        }
+    }
+
     @Test
     @Throws(IOException::class)
     fun currentSchemaOpensCleanly() {

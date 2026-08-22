@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.showtracker.app.domain.describeReason
 import com.showtracker.app.ui.LibraryViewModel
 import com.showtracker.app.ui.components.Divider
+import com.showtracker.app.ui.components.PreviewSheet
 import com.showtracker.app.ui.components.ResultRow
 import com.showtracker.app.ui.theme.Accent
 import com.showtracker.app.ui.theme.Danger
@@ -60,6 +61,7 @@ fun DiscoverScreen(
     onBack: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val preview by viewModel.preview.collectAsStateWithLifecycle()
 
     // Read from the library's own flow rather than tracked in the discover state. An add is
     // asynchronous and can fail; marking a row followed the moment it was tapped would tick
@@ -157,18 +159,18 @@ fun DiscoverScreen(
         }
     }
 
-    state.preview?.let { preview ->
+    preview?.let { showing ->
         PreviewSheet(
-            preview = preview,
-            alreadyFollowing = preview.id in tracked,
+            preview = showing,
+            alreadyFollowing = showing.id in tracked,
             onFollow = {
-                libraryViewModel.addShow(preview.id, viewModel::showError)
+                libraryViewModel.addShow(showing.id, viewModel::showError)
                 // Dropped from the pool rather than left showing a tick: the tab answers
                 // "what next", and something now being followed is no longer an answer.
-                viewModel.onFollowed(preview.id)
+                viewModel.onFollowed(showing.id)
                 viewModel.closePreview()
             },
-            onDismissShow = { viewModel.dismiss(preview.id) },
+            onDismissShow = { viewModel.dismiss(showing.id) },
             onClose = viewModel::closePreview,
         )
     }

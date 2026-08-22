@@ -11,10 +11,11 @@ import com.showtracker.app.domain.SUGGESTIONS_PER_PAGE
 import com.showtracker.app.domain.SUGGESTION_POOL
 import com.showtracker.app.domain.SearchResult
 import com.showtracker.app.domain.SeededResults
-import com.showtracker.app.domain.ShowDetail
 import com.showtracker.app.domain.rankRecommendations
 import com.showtracker.app.network.TmdbClient
 import com.showtracker.app.ui.catchingUserFacing
+import com.showtracker.app.ui.components.Preview
+import com.showtracker.app.ui.components.PreviewController
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,27 +46,10 @@ data class TabData<T>(
     val note: String? = null,
 )
 
-/**
- * The show being previewed before the user commits to following it.
- *
- * Held here rather than in the screen because what fills it is a network fetch, and one
- * that survives a rotation is worth the few lines of state it costs.
- */
-data class Preview(
-    val id: Int,
-    val name: String,
-    val posterPath: String?,
-    val firstAirDate: String?,
-    val loading: Boolean = true,
-    val detail: ShowDetail? = null,
-    val error: String? = null,
-)
-
 data class DiscoverUiState(
     val tab: DiscoverTab = DiscoverTab.FOR_YOU,
     val forYou: TabData<Candidate> = TabData(),
     val trending: TabData<SearchResult> = TabData(),
-    val preview: Preview? = null,
     /** Whether refreshing will show a further page rather than re-asking TMDB. */
     val moreSuggestions: Boolean = false,
 )
@@ -82,6 +66,8 @@ class DiscoverViewModel(
     private val settings: Settings,
     private val library: LibraryRepository,
 ) : ViewModel() {
+    private val previews = PreviewController(tmdb, settings, viewModelScope)
+
     private val _state = MutableStateFlow(DiscoverUiState())
     val state: StateFlow<DiscoverUiState> = _state.asStateFlow()
 
@@ -234,58 +220,14 @@ class DiscoverViewModel(
 
     // --- preview ---
 
-    /** Open the sheet for [result], and fetch what it needs to say something useful. */
+    val preview: StateFlow<Preview?> = previews.preview
+
     fun openPreview(result: SearchResult) {
-        _state.update {
-            it.copy(
-                preview =
-                    Preview(
-                        id = result.id,
-                        name = result.name,
-                        posterPath = result.posterPath,
-                        firstAirDate = result.firstAirDate,
-                    ),
-            )
-        }
-        fetchPreview(result.id)
-    }
-
-    private fun fetchPreview(id: Int) {
-        viewModelScope.launch {
-            catchingUserFacing {
-                val key = settings.apiKey.first() ?: error("No TMDB key configured.")
-                tmdb.fetchShow(key, id)
-            }.onSuccess { detail ->
-                updatePreview(id) { it.copy(loading = false, detail = detail) }
-            }.onFailure { failure ->
-                updatePreview(id) {
-                    it.copy(
-                        loading = false,
-                        error = failure.message ?: "Could not load that show.",
-                    )
-                }
-            }
-        }
-    }
-
-    /**
-     * Apply [block] only while [id] is still the show on screen.
-     *
-     * A slow fetch landing after the user closed the sheet, or opened a different show,
-     * would otherwise fill it with the wrong synopsis and episode counts.
-     */
-    private fun updatePreview(
-        id: Int,
-        block: (Preview) -> Preview,
-    ) {
-        _state.update { state ->
-            val preview = state.preview
-            if (preview?.id != id) state else state.copy(preview = block(preview))
-        }
+        previews.open(result)
     }
 
     fun closePreview() {
-        _state.update { it.copy(preview = null) }
+        previews.close()
     }
 
     // --- dismissals ---
@@ -298,10 +240,20 @@ class DiscoverViewModel(
      * a gap.
      */
     fun dismiss(id: Int) {
+        // Read before the removal below, and from the sheet if the pool no longer holds it
+        // - dismissing from an already-stale page would otherwise store a blank name and
+        // leave an unidentifiable row in the hidden-shows list.
+        val name =
+            pool.firstOrNull { it.show.id == id }?.show?.name
+                ?: previews.preview.value
+                    ?.takeIf { it.id == id }
+                    ?.name
+                ?: ""
+
         viewModelScope.launch {
-            library.dismiss(id, Instant.now().toString())
+            library.dismiss(id, name, Instant.now().toString())
             removeFromPool(id)
-            if (_state.value.preview?.id == id) closePreview()
+            if (previews.preview.value?.id == id) closePreview()
         }
     }
 

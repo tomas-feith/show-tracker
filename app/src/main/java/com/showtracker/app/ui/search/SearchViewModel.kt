@@ -8,6 +8,8 @@ import com.showtracker.app.data.Settings
 import com.showtracker.app.domain.SearchResult
 import com.showtracker.app.network.TmdbClient
 import com.showtracker.app.ui.catchingUserFacing
+import com.showtracker.app.ui.components.Preview
+import com.showtracker.app.ui.components.PreviewController
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +30,25 @@ class SearchViewModel(
     private val tmdb: TmdbClient,
     private val settings: Settings,
 ) : ViewModel() {
+    private val previews = PreviewController(tmdb, settings, viewModelScope)
+
+    /**
+     * The sheet shown before following a search hit.
+     *
+     * Search used to follow a show the instant its row was tapped, which is the same
+     * one-tap commitment the discovery list was changed away from. Two screens listing
+     * shows the user has not seen should not answer the same gesture differently.
+     */
+    val preview: StateFlow<Preview?> = previews.preview
+
+    fun openPreview(result: SearchResult) {
+        previews.open(result)
+    }
+
+    fun closePreview() {
+        previews.close()
+    }
+
     private val _state = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
 
