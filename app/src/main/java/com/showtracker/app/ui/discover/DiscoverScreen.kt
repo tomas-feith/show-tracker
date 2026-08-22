@@ -32,8 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.showtracker.app.domain.Candidate
-import com.showtracker.app.domain.SearchResult
 import com.showtracker.app.domain.describeReason
 import com.showtracker.app.ui.LibraryViewModel
 import com.showtracker.app.ui.components.Divider
@@ -87,10 +85,21 @@ fun DiscoverScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.load(force = true) }) {
+                    IconButton(onClick = {
+                        if (state.tab == DiscoverTab.FOR_YOU) {
+                            viewModel.refreshForYou()
+                        } else {
+                            viewModel.load(force = true)
+                        }
+                    }) {
                         Icon(
                             Icons.Default.Refresh,
-                            contentDescription = "Refresh suggestions",
+                            contentDescription =
+                                if (state.tab == DiscoverTab.FOR_YOU && state.moreSuggestions) {
+                                    "Show different suggestions"
+                                } else {
+                                    "Refresh suggestions"
+                                },
                             tint = TextMuted,
                         )
                     }
@@ -104,26 +113,7 @@ fun DiscoverScreen(
         },
     ) { insets ->
         Column(Modifier.padding(insets).fillMaxSize()) {
-            TabRow(
-                selectedTabIndex = state.tab.ordinal,
-                containerColor = Surface,
-                contentColor = Accent,
-            ) {
-                Tab(
-                    selected = state.tab == DiscoverTab.FOR_YOU,
-                    onClick = { viewModel.selectTab(DiscoverTab.FOR_YOU) },
-                    text = { Text("For you") },
-                    selectedContentColor = Accent,
-                    unselectedContentColor = TextMuted,
-                )
-                Tab(
-                    selected = state.tab == DiscoverTab.TRENDING,
-                    onClick = { viewModel.selectTab(DiscoverTab.TRENDING) },
-                    text = { Text("Trending") },
-                    selectedContentColor = Accent,
-                    unselectedContentColor = TextMuted,
-                )
-            }
+            Tabs(state.tab, viewModel::selectTab)
 
             when (state.tab) {
                 DiscoverTab.FOR_YOU -> {
@@ -136,7 +126,13 @@ fun DiscoverScreen(
                                 "be pooled here.",
                         key = { it.show.id },
                     ) { candidate ->
-                        SuggestionRow(candidate, tracked, viewModel, libraryViewModel)
+                        ResultRow(
+                            name = candidate.show.name,
+                            posterPath = candidate.show.posterPath,
+                            subtitle = describeReason(candidate.becauseOf),
+                            tracked = candidate.show.id in tracked,
+                            onClick = { viewModel.openPreview(candidate.show) },
+                        )
                     }
                 }
 
@@ -148,11 +144,60 @@ fun DiscoverScreen(
                         emptyBody = "TMDB returned no trending shows for this week.",
                         key = { it.id },
                     ) { result ->
-                        TrendingRow(result, tracked, viewModel, libraryViewModel)
+                        ResultRow(
+                            name = result.name,
+                            posterPath = result.posterPath,
+                            subtitle = result.firstAirDate?.take(4) ?: "Date unknown",
+                            tracked = result.id in tracked,
+                            onClick = { viewModel.openPreview(result) },
+                        )
                     }
                 }
             }
         }
+    }
+
+    state.preview?.let { preview ->
+        PreviewSheet(
+            preview = preview,
+            alreadyFollowing = preview.id in tracked,
+            onFollow = {
+                libraryViewModel.addShow(preview.id, viewModel::showError)
+                // Dropped from the pool rather than left showing a tick: the tab answers
+                // "what next", and something now being followed is no longer an answer.
+                viewModel.onFollowed(preview.id)
+                viewModel.closePreview()
+            },
+            onDismissShow = { viewModel.dismiss(preview.id) },
+            onClose = viewModel::closePreview,
+        )
+    }
+}
+
+@Composable
+private fun Tabs(
+    selected: DiscoverTab,
+    onSelect: (DiscoverTab) -> Unit,
+) {
+    TabRow(
+        selectedTabIndex = selected.ordinal,
+        containerColor = Surface,
+        contentColor = Accent,
+    ) {
+        Tab(
+            selected = selected == DiscoverTab.FOR_YOU,
+            onClick = { onSelect(DiscoverTab.FOR_YOU) },
+            text = { Text("For you") },
+            selectedContentColor = Accent,
+            unselectedContentColor = TextMuted,
+        )
+        Tab(
+            selected = selected == DiscoverTab.TRENDING,
+            onClick = { onSelect(DiscoverTab.TRENDING) },
+            text = { Text("Trending") },
+            selectedContentColor = Accent,
+            unselectedContentColor = TextMuted,
+        )
     }
 }
 
@@ -217,38 +262,6 @@ private fun <T> TabBody(
             }
         }
     }
-}
-
-@Composable
-private fun SuggestionRow(
-    candidate: Candidate,
-    tracked: Set<Int>,
-    viewModel: DiscoverViewModel,
-    libraryViewModel: LibraryViewModel,
-) {
-    ResultRow(
-        name = candidate.show.name,
-        posterPath = candidate.show.posterPath,
-        subtitle = describeReason(candidate.becauseOf),
-        tracked = candidate.show.id in tracked,
-        onClick = { libraryViewModel.addShow(candidate.show.id, viewModel::showError) },
-    )
-}
-
-@Composable
-private fun TrendingRow(
-    result: SearchResult,
-    tracked: Set<Int>,
-    viewModel: DiscoverViewModel,
-    libraryViewModel: LibraryViewModel,
-) {
-    ResultRow(
-        name = result.name,
-        posterPath = result.posterPath,
-        subtitle = result.firstAirDate?.take(4) ?: "Date unknown",
-        tracked = result.id in tracked,
-        onClick = { libraryViewModel.addShow(result.id, viewModel::showError) },
-    )
 }
 
 @Composable

@@ -8,7 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [ShowEntity::class, SeasonEntity::class],
+    entities = [ShowEntity::class, SeasonEntity::class, DismissedEntity::class],
     version = ShowDatabase.VERSION,
     exportSchema = true,
 )
@@ -16,7 +16,7 @@ abstract class ShowDatabase : RoomDatabase() {
     abstract fun showDao(): ShowDao
 
     companion object {
-        const val VERSION = 2
+        const val VERSION = 3
 
         const val NAME = "shows.db"
 
@@ -31,6 +31,29 @@ abstract class ShowDatabase : RoomDatabase() {
             object : Migration(1, 2) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     db.execSQL("ALTER TABLE shows ADD COLUMN inProgressSeason INTEGER")
+                }
+            }
+
+        /**
+         * Adds `shows.overview`, and the `dismissed` table behind "not interested".
+         *
+         * The column is NOT NULL with a `''` default so existing rows get the same value
+         * a show with no synopsis would have, rather than a null the domain would have to
+         * keep re-deciding about. The text is refetched on the next refresh, so the empty
+         * string is a gap that closes itself rather than data that was lost.
+         */
+        private val MIGRATION_2_3 =
+            object : Migration(2, 3) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "ALTER TABLE shows ADD COLUMN overview TEXT NOT NULL DEFAULT ''",
+                    )
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS dismissed (" +
+                            "id INTEGER NOT NULL, " +
+                            "dismissedAt TEXT NOT NULL, " +
+                            "PRIMARY KEY(id))",
+                    )
                 }
             }
 
@@ -50,7 +73,8 @@ abstract class ShowDatabase : RoomDatabase() {
          * The exported schema JSONs under `app/schemas` are committed for exactly this
          * reason: they are what the migration test diffs against.
          */
-        val MIGRATIONS: List<Migration> = listOf(MIGRATION_1_2)
+
+        val MIGRATIONS: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3)
 
         @Volatile
         private var instance: ShowDatabase? = null

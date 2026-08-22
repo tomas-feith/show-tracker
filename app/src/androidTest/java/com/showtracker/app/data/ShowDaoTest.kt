@@ -31,6 +31,7 @@ class ShowDaoTest {
     ) = ShowEntity(
         id = 1,
         name = "Shōgun",
+        overview = "A synopsis.",
         posterPath = null,
         firstAirDate = "2024-02-27",
         status = "Returning Series",

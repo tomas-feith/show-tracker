@@ -76,12 +76,57 @@ class MigrationTest {
         }
     }
 
+    /**
+     * Adding the synopsis column and the dismissals table must leave progress alone.
+     *
+     * This is the migration that will run against the live library on the next install, so
+     * what it asserts is the thing that cannot be refetched: `watchedThroughSeason`, and
+     * the in-progress marker added at version 2, both unchanged either side of it.
+     */
+    @Test
+    @Throws(IOException::class)
+    fun addingOverviewAndDismissalsKeepsExistingProgress() {
+        helper.createDatabase(TEST_DB, 2).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO shows
+                    (id, name, posterPath, firstAirDate, status, watchedThroughSeason,
+                     inProgressSeason, knownAiredSeason, addedAt, lastCheckedAt)
+                VALUES (1, 'Shōgun', NULL, '2024-02-27', 'Returning Series',
+                        3, 4, 4, '2026-01-05T10:00:00.000Z', NULL)
+                """.trimIndent(),
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 3, true, *MIGRATIONS)
+
+        val query =
+            "SELECT watchedThroughSeason, inProgressSeason, knownAiredSeason, overview " +
+                "FROM shows WHERE id = 1"
+
+        db.query(query).use { cursor ->
+            assertTrue("the row did not survive the migration", cursor.moveToFirst())
+            assertEquals("watch progress was disturbed", 3, cursor.getInt(0))
+            assertEquals("the in-progress marker was disturbed", 4, cursor.getInt(1))
+            assertEquals(4, cursor.getInt(2))
+            // Empty rather than null: the domain treats a missing synopsis as "", and the
+            // next refresh fills it in from TMDB.
+            assertEquals("", cursor.getString(3))
+        }
+
+        db.query("SELECT COUNT(*) FROM dismissed").use { cursor ->
+            assertTrue("dismissed table missing after migration", cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+    }
+
     @Test
     @Throws(IOException::class)
     fun currentSchemaOpensCleanly() {
         helper.createDatabase(TEST_DB, ShowDatabase.VERSION).use { db ->
             assertTrue("shows table missing", db.hasTable("shows"))
             assertTrue("seasons table missing", db.hasTable("seasons"))
+            assertTrue("dismissed table missing", db.hasTable("dismissed"))
         }
     }
 

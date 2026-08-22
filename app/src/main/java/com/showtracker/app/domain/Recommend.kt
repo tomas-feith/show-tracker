@@ -43,7 +43,20 @@ private const val PRIOR_VOTES = 50.0
 /** Roughly TMDB's own mean for scripted television; the value an unvoted show regresses to. */
 private const val PRIOR_RATING = 6.0
 
-const val DEFAULT_SUGGESTION_COUNT = 30
+/** One screenful of suggestions. */
+const val SUGGESTIONS_PER_PAGE = 30
+
+/**
+ * How deep the ranked list is kept.
+ *
+ * Refreshing walks down this pool a page at a time rather than re-asking TMDB, so it wants
+ * to be several screenfuls - but it is also the point past which the suggestions are no
+ * longer worth showing: everything here was ranked, and rank 240 is a show one of the
+ * user's is faintly associated with. Beyond that, asking TMDB again is the better answer.
+ */
+const val SUGGESTION_POOL = SUGGESTIONS_PER_PAGE * 8
+
+const val DEFAULT_SUGGESTION_COUNT = SUGGESTIONS_PER_PAGE
 
 /**
  * Fold per-show recommendation lists into one ranked list.

@@ -43,6 +43,21 @@ interface ShowDao {
     @Query("DELETE FROM shows")
     suspend fun deleteAllShows()
 
+    @Query("SELECT id FROM dismissed")
+    fun observeDismissed(): Flow<List<Int>>
+
+    @Query("SELECT id FROM dismissed")
+    suspend fun dismissedIds(): List<Int>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun dismiss(entry: DismissedEntity)
+
+    @Query("DELETE FROM dismissed WHERE id = :id")
+    suspend fun undismiss(id: Int)
+
+    @Query("DELETE FROM dismissed")
+    suspend fun clearDismissed()
+
     /**
      * Move the watched-through watermark, dropping an in-progress marker the watermark has
      * now reached.

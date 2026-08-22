@@ -1,5 +1,6 @@
 package com.showtracker.app.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.ForeignKey
@@ -23,6 +24,17 @@ import com.showtracker.app.domain.TrackedShow
 data class ShowEntity(
     @PrimaryKey val id: Int,
     val name: String,
+    /**
+     * TMDB's synopsis. Added at schema version 3; "" where TMDB has none.
+     *
+     * The default is declared here as well as in the migration's `ADD COLUMN`, so a table
+     * created fresh and one migrated into version 3 are identical rather than merely
+     * compatible. Without it the two differ - only the migrated table has the default -
+     * and any SQL that omits the column works on an upgraded install while failing on a
+     * new one.
+     */
+    @ColumnInfo(defaultValue = "")
+    val overview: String,
     val posterPath: String?,
     val firstAirDate: String?,
     val status: String,
@@ -109,6 +121,7 @@ fun ShowWithSeasons.toDomain(): TrackedShow =
     TrackedShow(
         id = show.id,
         name = show.name,
+        overview = show.overview,
         posterPath = show.posterPath,
         firstAirDate = show.firstAirDate,
         status = show.status,
@@ -132,6 +145,7 @@ fun TrackedShow.toEntity(): ShowEntity =
     ShowEntity(
         id = id,
         name = name,
+        overview = overview,
         posterPath = posterPath,
         firstAirDate = firstAirDate,
         status = status,
@@ -143,6 +157,19 @@ fun TrackedShow.toEntity(): ShowEntity =
         addedAt = addedAt,
         lastCheckedAt = lastCheckedAt,
     )
+
+/**
+ * A suggestion the user said no to.
+ *
+ * Its own table rather than a flag on `shows`, because a dismissed show is precisely one
+ * that is *not* in the library: storing it as a show would put it in every query that
+ * means "what am I following".
+ */
+@Entity(tableName = "dismissed")
+data class DismissedEntity(
+    @PrimaryKey val id: Int,
+    val dismissedAt: String,
+)
 
 fun TrackedShow.toSeasonEntities(): List<SeasonEntity> =
     seasons.map { SeasonEntity(id, it.seasonNumber, it.name, it.airDate, it.episodeCount) }

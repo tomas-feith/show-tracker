@@ -22,6 +22,25 @@ class LibraryRepository(
 
     suspend fun isTracked(id: Int): Boolean = dao.exists(id)
 
+    fun observeDismissed(): Flow<Set<Int>> = dao.observeDismissed().map { it.toSet() }
+
+    suspend fun dismissedIds(): Set<Int> = dao.dismissedIds().toSet()
+
+    suspend fun dismiss(
+        id: Int,
+        at: String,
+    ) {
+        dao.dismiss(DismissedEntity(id, at))
+    }
+
+    suspend fun undismiss(id: Int) {
+        dao.undismiss(id)
+    }
+
+    suspend fun clearDismissed() {
+        dao.clearDismissed()
+    }
+
     suspend fun count(): Int = dao.count()
 
     suspend fun save(show: TrackedShow) {

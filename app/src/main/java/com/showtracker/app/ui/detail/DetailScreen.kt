@@ -132,6 +132,14 @@ fun DetailScreen(
                 }
             }
 
+            if (show.overview.isNotBlank()) {
+                Text(
+                    show.overview,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextMuted,
+                )
+            }
+
             Text(
                 "Tap the last season you finished. Everything above it is backlog; tap it " +
                     "again to clear. Use the play button to mark the one you are partway " +
@@ -292,6 +300,17 @@ private fun SeasonRow(
                 color = if (aired) MaterialTheme.colorScheme.onBackground else TextFaint,
             )
         }
+
+        // The year sits in its own column ahead of the name, so the release dates line up
+        // down the list and can be scanned in one pass. That is the question this answers -
+        // "was this the one I watched two summers ago?" - and it is not answerable when the
+        // dates are buried at varying offsets inside a sentence.
+        Text(
+            season.airDate?.take(4) ?: "----",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            color = if (season.airDate == null) TextFaint else TextMuted,
+        )
 
         Column(Modifier.weight(1f)) {
             Text(

@@ -51,6 +51,11 @@ internal data class ExportEnvelope(
 internal data class ShowPayload(
     val id: Int,
     val name: String,
+    /**
+     * Added after the React Native build, so absent in an older file. Defaulting to "" is
+     * right rather than lossy: the next refresh refills it from TMDB.
+     */
+    val overview: String = "",
     val posterPath: String? = null,
     val firstAirDate: String? = null,
     val status: String = "",
@@ -153,6 +158,7 @@ internal fun ShowPayload.toDomain(): TrackedShow {
     return TrackedShow(
         id = id,
         name = name,
+        overview = overview,
         posterPath = posterPath,
         firstAirDate = firstAirDate,
         status = status,
@@ -181,6 +187,7 @@ internal fun TrackedShow.toPayload(): ShowPayload =
     ShowPayload(
         id = id,
         name = name,
+        overview = overview,
         posterPath = posterPath,
         firstAirDate = firstAirDate,
         status = status,

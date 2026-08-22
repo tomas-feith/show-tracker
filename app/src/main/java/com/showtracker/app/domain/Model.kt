@@ -90,6 +90,11 @@ data class SearchResult(
 data class TrackedShow(
     val id: Int,
     val name: String,
+    /**
+     * TMDB's synopsis. Stored rather than fetched on demand so the library reads the same
+     * offline as on, and empty when TMDB has none - which it genuinely does for some shows.
+     */
+    val overview: String = "",
     val posterPath: String? = null,
     val firstAirDate: String? = null,
     val status: String = "",

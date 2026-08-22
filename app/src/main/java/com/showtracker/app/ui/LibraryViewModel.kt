@@ -172,6 +172,7 @@ class LibraryViewModel(
                     TrackedShow(
                         id = detail.id,
                         name = detail.name,
+                        overview = detail.overview,
                         posterPath = detail.posterPath,
                         firstAirDate = detail.firstAirDate,
                         status = detail.status,
