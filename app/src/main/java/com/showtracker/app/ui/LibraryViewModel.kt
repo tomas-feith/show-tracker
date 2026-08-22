@@ -156,13 +156,23 @@ class LibraryViewModel(
     /**
      * Follow a show.
      *
-     * The watermarks start level with the latest aired season, so following a long-running
-     * show does not immediately announce a backlog the user never asked about - except that
-     * watched-through stops one short of a season still releasing episodes, which nobody
-     * can have finished. See [initialWatchedThrough].
+     * [knownAiredSeason] always starts level with the latest aired season, whatever the
+     * user says they have watched: it records what the app has already told them about, and
+     * starting it lower would announce seasons that were out before they ever followed the
+     * show. The watched-through watermark is a separate question, and one only the user can
+     * answer - see [watchedThrough].
      */
     fun addShow(
         id: Int,
+        /**
+         * How far the user says they have already watched, or null to let the app guess.
+         *
+         * The guess - caught up, bar a season still airing - is right for the common case
+         * of following something you have just finished, and wrong for every other one:
+         * a show you have never seen arrived marked as entirely watched. The preview sheet
+         * asks, and passes the answer here.
+         */
+        watchedThrough: Int? = null,
         onError: (String) -> Unit = {},
     ) {
         viewModelScope.launch {
@@ -178,12 +188,13 @@ class LibraryViewModel(
                 // season has been announced, but it cannot have been watched yet.
                 val announced = initialWatermark(detail.seasons, today)
                 val watched =
-                    initialWatchedThrough(
-                        detail.seasons,
-                        detail.lastEpisode,
-                        detail.nextEpisode,
-                        today,
-                    )
+                    watchedThrough
+                        ?: initialWatchedThrough(
+                            detail.seasons,
+                            detail.lastEpisode,
+                            detail.nextEpisode,
+                            today,
+                        )
 
                 library.save(
                     TrackedShow(

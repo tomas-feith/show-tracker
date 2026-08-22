@@ -1,5 +1,6 @@
 package com.showtracker.app.ui.components
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,18 +14,25 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.showtracker.app.domain.Season
 import com.showtracker.app.domain.ShowDetail
 import com.showtracker.app.domain.formatEpisode
+import com.showtracker.app.domain.initialWatchedThrough
 import com.showtracker.app.domain.realSeasons
 import com.showtracker.app.ui.theme.Accent
 import com.showtracker.app.ui.theme.Danger
@@ -32,6 +40,7 @@ import com.showtracker.app.ui.theme.StateAiring
 import com.showtracker.app.ui.theme.Surface
 import com.showtracker.app.ui.theme.TextFaint
 import com.showtracker.app.ui.theme.TextMuted
+import java.time.LocalDate
 
 /**
  * What a suggestion actually is, before following it.
@@ -46,7 +55,11 @@ import com.showtracker.app.ui.theme.TextMuted
 fun PreviewSheet(
     preview: Preview,
     alreadyFollowing: Boolean,
-    onFollow: () -> Unit,
+    /**
+     * Called with how far the user says they have watched, or null while the season list
+     * has not arrived and there is nothing to have chosen from.
+     */
+    onFollow: (Int?) -> Unit,
     onClose: () -> Unit,
     /**
      * Offered only where hiding a show means something. Search is somewhere the user went
@@ -108,7 +121,25 @@ fun PreviewSheet(
                 }
             }
 
-            Actions(alreadyFollowing, preview.loading, onFollow, onDismissShow)
+            val seasons = preview.detail?.let { realSeasons(it.seasons) }.orEmpty()
+
+            // Defaults to the app's own guess, recomputed when the detail arrives, so
+            // someone following a show they have just finished still taps once.
+            var seenUpTo by
+                remember(preview.id, preview.detail) {
+                    mutableIntStateOf(defaultSeen(preview.detail))
+                }
+
+            if (!alreadyFollowing && seasons.isNotEmpty()) {
+                SeenSelector(seasons, seenUpTo) { seenUpTo = it }
+            }
+
+            Actions(
+                alreadyFollowing = alreadyFollowing,
+                loading = preview.loading,
+                onFollow = { onFollow(seenUpTo.takeIf { seasons.isNotEmpty() }) },
+                onDismissShow = onDismissShow,
+            )
         }
     }
 }
@@ -160,6 +191,67 @@ private fun Synopsis(detail: ShowDetail?) {
             color = StateAiring,
         )
     }
+}
+
+/**
+ * How much of the show the user says they have already seen.
+ *
+ * Asked at the moment of following, because that is the only moment the answer is cheap:
+ * afterwards it is a trip to the detail screen to correct a claim the app made on the
+ * user's behalf. The app's guess - caught up - stays the default, since following something
+ * you have just finished is the common case; it is now a default rather than a decision.
+ */
+@Composable
+private fun SeenSelector(
+    seasons: List<Season>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Text(
+        "Seen up to",
+        style = MaterialTheme.typography.bodyMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onBackground,
+    )
+
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(
+            selected = selected == 0,
+            onClick = { onSelect(0) },
+            label = { Text("Not started") },
+        )
+        seasons.forEach { season ->
+            FilterChip(
+                selected = selected == season.seasonNumber,
+                onClick = { onSelect(season.seasonNumber) },
+                label = { Text("S${season.seasonNumber}") },
+            )
+        }
+    }
+
+    Text(
+        if (selected == 0) {
+            "Every aired season will show as backlog."
+        } else {
+            "Seasons above $selected will show as backlog. You can change this any time."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = TextFaint,
+    )
+}
+
+/** The app's own guess, used as the selector's starting point. */
+private fun defaultSeen(detail: ShowDetail?): Int {
+    if (detail == null) return 0
+    return initialWatchedThrough(
+        detail.seasons,
+        detail.lastEpisode,
+        detail.nextEpisode,
+        LocalDate.now(),
+    )
 }
 
 @Composable

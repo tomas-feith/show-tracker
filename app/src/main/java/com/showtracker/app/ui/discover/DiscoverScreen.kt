@@ -163,8 +163,8 @@ fun DiscoverScreen(
         PreviewSheet(
             preview = showing,
             alreadyFollowing = showing.id in tracked,
-            onFollow = {
-                libraryViewModel.addShow(showing.id, viewModel::showError)
+            onFollow = { seenUpTo ->
+                libraryViewModel.addShow(showing.id, seenUpTo, viewModel::showError)
                 // Dropped from the pool rather than left showing a tick: the tab answers
                 // "what next", and something now being followed is no longer an answer.
                 viewModel.onFollowed(showing.id)

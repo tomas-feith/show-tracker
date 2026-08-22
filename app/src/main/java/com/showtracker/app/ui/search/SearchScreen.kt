@@ -111,8 +111,8 @@ fun SearchScreen(
         PreviewSheet(
             preview = showing,
             alreadyFollowing = showing.id in tracked,
-            onFollow = {
-                libraryViewModel.addShow(showing.id, searchViewModel::showError)
+            onFollow = { seenUpTo ->
+                libraryViewModel.addShow(showing.id, seenUpTo, searchViewModel::showError)
                 searchViewModel.closePreview()
             },
             onClose = searchViewModel::closePreview,
