@@ -223,6 +223,27 @@ class TmdbClientTest {
         }
 
     @Test
+    fun `drops adult titles from lists that cannot ask TMDB to filter them`() =
+        runTest {
+            // /trending and /tv/{id}/recommendations take no include_adult parameter, so
+            // the policy /search/tv states in its request has to be applied to the response.
+            val body =
+                """
+                {"results":[
+                  {"id":1,"name":"Fine","adult":false},
+                  {"id":2,"name":"Not fine","adult":true},
+                  {"id":3,"name":"No adult field"}
+                ]}
+                """.trimIndent()
+
+            enqueue(body)
+            assertEquals(listOf(1, 3), client.trendingShows(v3Key).map { it.id })
+
+            enqueue(body)
+            assertEquals(listOf(1, 3), client.recommendationsFor(v3Key, 9).map { it.id })
+        }
+
+    @Test
     fun `asks for the weekly trending window by default`() =
         runTest {
             enqueue("""{"results":[{"id":7,"name":"Dark"}]}""")

@@ -75,9 +75,8 @@ class TmdbClient(
         /** How many shows a library refresh fetches at once. */
         const val DEFAULT_CONCURRENCY = 5
 
-        /** Time windows TMDB accepts on `/trending`. */
+        /** The `/trending` time window. TMDB also accepts "day"; see [trendingShows]. */
         const val TRENDING_WEEK = "week"
-        const val TRENDING_DAY = "day"
 
         private const val CONNECT_TIMEOUT_SECONDS = 10L
 
@@ -161,7 +160,7 @@ class TmdbClient(
                 mapOf("query" to trimmed, "include_adult" to "false"),
             )
 
-        return data.results.map { it.toDomain() }
+        return data.results.dropAdult()
     }
 
     /**
@@ -175,9 +174,7 @@ class TmdbClient(
         key: String,
         id: Int,
     ): List<SearchResult> =
-        request<SearchResponse>(key, "/tv/$id/recommendations")
-            .results
-            .map { it.toDomain() }
+        request<SearchResponse>(key, "/tv/$id/recommendations").results.dropAdult()
 
     /**
      * What is trending on TMDB right now, across everyone - no library involved.
@@ -188,10 +185,7 @@ class TmdbClient(
     suspend fun trendingShows(
         key: String,
         window: String = TRENDING_WEEK,
-    ): List<SearchResult> =
-        request<SearchResponse>(key, "/trending/tv/$window")
-            .results
-            .map { it.toDomain() }
+    ): List<SearchResult> = request<SearchResponse>(key, "/trending/tv/$window").results.dropAdult()
 
     /** Fetch full detail for one show, including its season list. */
     suspend fun fetchShow(
@@ -256,6 +250,16 @@ private data class SearchResponse(
     val results: List<SearchItem> = emptyList(),
 )
 
+/**
+ * Drop adult titles, then map to the domain.
+ *
+ * `/search/tv` is told `include_adult=false` in the request, but `/trending` and
+ * `/tv/{id}/recommendations` accept no such parameter, so for those the same policy can
+ * only be applied to the response. Doing it for all three keeps one rule rather than two.
+ */
+private fun List<SearchItem>.dropAdult(): List<SearchResult> =
+    filterNot { it.adult }.map { it.toDomain() }
+
 @Serializable
 private data class SearchItem(
     val id: Int,
@@ -265,6 +269,8 @@ private data class SearchItem(
     @SerialName("first_air_date") val firstAirDate: String? = null,
     @SerialName("vote_average") val voteAverage: Double = 0.0,
     @SerialName("vote_count") val voteCount: Int = 0,
+    /** Absent on some TV payloads, in which case the title is not adult. */
+    val adult: Boolean = false,
 ) {
     fun toDomain(): SearchResult =
         SearchResult(

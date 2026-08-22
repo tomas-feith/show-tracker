@@ -65,6 +65,15 @@ class DiscoverViewModel(
 
     private var running: Job? = null
 
+    /**
+     * Bumped by every load, so a job can tell whether it is still the current one.
+     *
+     * Cancellation unwinds asynchronously: by the time an abandoned load reaches its
+     * `finally`, the load that replaced it may already be running, and clearing the flag
+     * then would hide a live spinner and let a second request start alongside the first.
+     */
+    private var generation = 0
+
     fun selectTab(tab: DiscoverTab) {
         _state.update { it.copy(tab = tab) }
         load(tab)
@@ -88,6 +97,7 @@ class DiscoverViewModel(
         // One load at a time. Switching tabs mid-flight would otherwise leave two requests
         // racing to write unrelated halves of the state.
         running?.cancel()
+        val mine = ++generation
         running =
             viewModelScope.launch {
                 startLoading(tab)
@@ -109,7 +119,7 @@ class DiscoverViewModel(
                         fail(tab, failure.message ?: "Could not load suggestions.")
                     }
                 } finally {
-                    stopLoading(tab)
+                    if (mine == generation) stopLoading(tab)
                 }
             }
     }
@@ -133,6 +143,14 @@ class DiscoverViewModel(
             }
 
         val failures = fetched.values.count { it.isFailure }
+
+        // Every seed failing is a failed load, not a library with nothing to suggest.
+        // Falling through would paint "follow a few shows and..." over what is really an
+        // offline phone or a rejected key, for someone whose library is full.
+        if (seeded.isEmpty() && fetched.isNotEmpty()) {
+            throw fetched.values.firstNotNullOf { it.exceptionOrNull() }
+        }
+
         val ranked = rankRecommendations(seeded, exclude = tracked)
 
         _state.update {
