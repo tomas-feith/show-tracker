@@ -4,8 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.showtracker.app.AppContainer
-import com.showtracker.app.data.LibraryRepository
-import com.showtracker.app.data.Settings
+import com.showtracker.app.data.ApiKeySource
+import com.showtracker.app.data.DiscoverLibrary
 import com.showtracker.app.domain.Candidate
 import com.showtracker.app.domain.SUGGESTIONS_PER_PAGE
 import com.showtracker.app.domain.SUGGESTION_POOL
@@ -63,8 +63,8 @@ data class DiscoverUiState(
  */
 class DiscoverViewModel(
     private val tmdb: TmdbClient,
-    private val settings: Settings,
-    private val library: LibraryRepository,
+    private val settings: ApiKeySource,
+    private val library: DiscoverLibrary,
 ) : ViewModel() {
     private val previews = PreviewController(tmdb, settings, viewModelScope)
 

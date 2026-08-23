@@ -4,6 +4,7 @@ import com.showtracker.app.domain.EpisodeRef
 import com.showtracker.app.domain.SearchResult
 import com.showtracker.app.domain.Season
 import com.showtracker.app.domain.ShowDetail
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -70,6 +71,15 @@ class TmdbClient(
     private val json: Json = Json { ignoreUnknownKeys = true },
     /** Overridden only by tests, which point it at a local server. */
     private val baseUrl: String = BASE,
+    /**
+     * Where the blocking call runs.
+     *
+     * Injectable so a test can put it on the same scheduler as the code under test. A
+     * ViewModel test drives a virtual clock, and work handed to the real IO pool does not
+     * belong to that clock - `advanceUntilIdle` returns while the request is still in
+     * flight, and the assertions then run against a half-finished load.
+     */
+    private val io: CoroutineDispatcher = Dispatchers.IO,
 ) {
     companion object {
         /** How many shows a library refresh fetches at once. */
@@ -117,7 +127,7 @@ class TmdbClient(
         url: HttpUrl,
         key: String,
     ): String =
-        withContext(Dispatchers.IO) {
+        withContext(io) {
             val request =
                 Request
                     .Builder()

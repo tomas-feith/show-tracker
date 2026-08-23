@@ -51,6 +51,34 @@ class BackupFolder(
             name
         }
 
+    /**
+     * The folder's name as its provider reports it.
+     *
+     * Asked rather than parsed out of the URI. A tree URI's document id is provider-
+     * specific and frequently opaque - Google Drive's is a base64 blob - so the string
+     * teased out of one is not a folder name, it is noise where a name should be.
+     */
+    suspend fun displayName(tree: Uri): String? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val doc =
+                    DocumentsContract.buildDocumentUriUsingTree(
+                        tree,
+                        DocumentsContract.getTreeDocumentId(tree),
+                    )
+                context.contentResolver
+                    .query(
+                        doc,
+                        arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                        null,
+                        null,
+                        null,
+                    ).use { cursor ->
+                        if (cursor != null && cursor.moveToFirst()) cursor.getString(0) else null
+                    }
+            }.getOrNull()
+        }
+
     /** Names of this app's exports already in the folder, newest first. */
     suspend fun list(tree: Uri): List<String> =
         withContext(Dispatchers.IO) {

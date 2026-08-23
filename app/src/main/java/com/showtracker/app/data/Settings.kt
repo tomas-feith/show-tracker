@@ -29,7 +29,7 @@ private val Context.settingsStore: DataStore<Preferences> by preferencesDataStor
 
 class Settings(
     private val context: Context,
-) {
+) : ApiKeySource {
     private companion object {
         val API_KEY = stringPreferencesKey("tmdb_api_key")
         val LAST_CHECKED_AT = stringPreferencesKey("last_checked_at")
@@ -38,7 +38,7 @@ class Settings(
         val LAST_BACKUP_ERROR = stringPreferencesKey("last_backup_error")
     }
 
-    val apiKey: Flow<String?> = context.settingsStore.data.map { it[API_KEY] }
+    override val apiKey: Flow<String?> = context.settingsStore.data.map { it[API_KEY] }
 
     val lastCheckedAt: Flow<String?> = context.settingsStore.data.map { it[LAST_CHECKED_AT] }
 

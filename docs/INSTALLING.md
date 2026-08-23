@@ -63,6 +63,37 @@ fallback deliberately disabled. Rehearse it in the debug build - or at least run
 `connectedDebugAndroidTest`, which replays the committed schema JSONs - before
 installing over the library.
 
+Run that twice after changing an entity. Room generates the schema JSON into
+`app/schemas`, which is also the directory packaged as the instrumentation test
+assets, so the first build hands the test the *previous* schema and it fails
+against a migration that is actually correct. The second run is the real result.
+
+If a migration is wrong, the app throws on launch and refuses to open. That is
+the designed outcome, and it is not data loss: destructive fallback is off, so
+the database is left untouched and a corrected build can still open it.
+
+## Backups
+
+Two things back this library up, and they are not alternatives.
+
+**Android Auto Backup** runs itself, to the user's Google account, and restores
+on a reinstall or a new phone. It keeps one snapshot and cannot be restored on
+demand. `LibraryBackupAgent` checkpoints the write-ahead log before the copy;
+without that the backup is the database as of SQLite's last checkpoint, which on
+a freshly populated library was 4 KB of a 198 KB database. Force one with:
+
+```sh
+adb shell bmgr backupnow com.showtracker.app
+```
+
+**Scheduled exports** are opt-in: Settings > Scheduled backups, pick a folder.
+A dated JSON is written there daily, the last 14 kept, and any of them can be
+read back through the normal import. Point it at a folder a cloud app already
+syncs and the copies leave the phone without this app holding an account.
+
+Testing a *restore* means wiping app data, so rehearse it on the debug build and
+never on the release install.
+
 ## Debug builds sit alongside
 
 The debug build has `applicationIdSuffix = ".debug"`, so it installs as

@@ -1,7 +1,10 @@
 package com.showtracker.app.data
 
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 // Naming and retention for the scheduled export.
 //
@@ -33,6 +36,32 @@ private val STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd-H
 const val BACKUPS_KEPT = 14
 
 fun backupFileName(now: LocalDateTime): String = "$PREFIX${now.format(STAMP)}$SUFFIX"
+
+/**
+ * Locale pinned rather than left to the device's.
+ *
+ * Every other string in this app is English, so a month name that follows the phone's
+ * locale would be the one translated word on the screen - and it would make this
+ * untestable, since the expected output would depend on where the test ran.
+ */
+private val SHOWN: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm").withLocale(Locale.UK)
+
+/**
+ * The stored timestamp as something a person reads.
+ *
+ * Stored as a UTC instant, because that is unambiguous and sorts; shown in the local
+ * calendar, because "05:53Z" is not an answer to "when did this last work" for someone
+ * looking at a clock that says 08:22. The sub-second precision is dropped for the same
+ * reason - nobody is timing it.
+ *
+ * An unparseable value is returned as-is rather than hidden: it means something wrote a
+ * shape this app did not, and showing it is how that gets noticed.
+ */
+fun describeBackupTime(
+    iso: String,
+    zone: ZoneId = ZoneId.systemDefault(),
+): String = runCatching { Instant.parse(iso).atZone(zone).format(SHOWN) }.getOrDefault(iso)
 
 /** True for a name this app wrote, and only for those. */
 fun isBackupFileName(name: String): Boolean =

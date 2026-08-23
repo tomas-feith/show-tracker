@@ -1,0 +1,281 @@
+package com.showtracker.app.ui
+
+import com.showtracker.app.data.ApiKeySource
+import com.showtracker.app.data.DiscoverLibrary
+import com.showtracker.app.domain.TrackedShow
+import com.showtracker.app.network.TmdbClient
+import com.showtracker.app.ui.discover.DiscoverTab
+import com.showtracker.app.ui.discover.DiscoverViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+/**
+ * The discovery screen's logic, over a real [TmdbClient] pointed at a local server.
+ *
+ * Both bugs pinned here shipped once: a cancelled load left its tab spinning for ever, and
+ * a library whose every seed failed rendered as "follow a few shows and..." over a full
+ * library. Neither is visible from the domain layer, and neither had a test, because the
+ * ViewModel could not be constructed off a device until [ApiKeySource] and
+ * [DiscoverLibrary] existed.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class DiscoverViewModelTest {
+    private lateinit var server: MockWebServer
+    private lateinit var tmdb: TmdbClient
+    private val dispatcher = StandardTestDispatcher()
+
+    private val key = "0123456789abcdef0123456789abcdef"
+
+    private class FakeKey(
+        value: String?,
+    ) : ApiKeySource {
+        override val apiKey: Flow<String?> = flowOf(value)
+    }
+
+    private class FakeLibrary(
+        private val shows: List<TrackedShow>,
+        private val alreadyDismissed: Set<Int> = emptySet(),
+    ) : DiscoverLibrary {
+        val dismissals = mutableListOf<Pair<Int, String>>()
+
+        override suspend fun all(): List<TrackedShow> = shows
+
+        override suspend fun dismissedIds(): Set<Int> = alreadyDismissed
+
+        override suspend fun dismiss(
+            id: Int,
+            name: String,
+            at: String,
+        ) {
+            dismissals += id to name
+        }
+    }
+
+    private fun show(
+        id: Int,
+        name: String = "Show $id",
+    ) = TrackedShow(id = id, name = name, addedAt = "2026-01-0$id")
+
+    private fun recommendations(vararg ids: Int): String =
+        ids.joinToString(
+            prefix = """{"results":[""",
+            postfix = "]}",
+            separator = ",",
+        ) { """{"id":$it,"name":"Rec $it","vote_average":8.0,"vote_count":900}""" }
+
+    private fun viewModel(library: DiscoverLibrary) = DiscoverViewModel(tmdb, FakeKey(key), library)
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(dispatcher)
+        server = MockWebServer()
+        server.start()
+        tmdb =
+            TmdbClient(
+                baseUrl = server.url("/3").toString().trimEnd('/'),
+                io = dispatcher,
+            )
+    }
+
+    @After
+    fun tearDown() {
+        server.shutdown()
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `every seed failing is reported as an error, not as an empty library`() =
+        runTest(dispatcher) {
+            // The whole library is present; it is the network that is broken. Rendering the
+            // "follow a few shows" empty state here told the user the opposite of the truth.
+            repeat(2) { server.enqueue(MockResponse().setResponseCode(503)) }
+
+            val model = viewModel(FakeLibrary(listOf(show(1), show(2))))
+            model.load(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+
+            val tab = model.state.value.forYou
+            assertNotNull("a total failure must surface as an error", tab.error)
+            assertTrue(tab.items.isEmpty())
+            // Not marked loaded, so returning to the tab retries rather than showing blank.
+            assertFalse(tab.loaded)
+            assertFalse(tab.loading)
+        }
+
+    @Test
+    fun `an empty library is an empty result rather than an error`() =
+        runTest(dispatcher) {
+            val model = viewModel(FakeLibrary(emptyList()))
+            model.load(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+
+            val tab = model.state.value.forYou
+            assertNull(tab.error)
+            assertTrue(tab.loaded)
+            assertTrue(tab.items.isEmpty())
+            assertEquals("no seeds means no requests", 0, server.requestCount)
+        }
+
+    @Test
+    fun `switching tabs mid-load does not leave the abandoned tab spinning`() =
+        runTest(dispatcher) {
+            // The abandoned load unwinds with a CancellationException, which
+            // catchingUserFacing rethrows - so its failure branch never runs, and only the
+            // `finally` can clear the flag. Left stuck, `load` also refuses to start the
+            // tab again, so the spinner was permanent.
+            //
+            // Routed by path rather than queued: a cancelled load consumes no response, so
+            // a queue would hand the trending request whatever the abandoned one left
+            // behind and the test would be asserting on response order, not on behaviour.
+            server.dispatcher =
+                object : Dispatcher() {
+                    override fun dispatch(request: RecordedRequest): MockResponse =
+                        if (request.path.orEmpty().contains("/trending/")) {
+                            MockResponse().setBody("""{"results":[{"id":99,"name":"T"}]}""")
+                        } else {
+                            MockResponse().setBody(recommendations(10, 11))
+                        }
+                }
+
+            val model = viewModel(FakeLibrary(listOf(show(1))))
+            model.load(DiscoverTab.FOR_YOU)
+            model.selectTab(DiscoverTab.TRENDING)
+            advanceUntilIdle()
+
+            assertFalse(
+                "the abandoned tab must not stay loading",
+                model.state.value.forYou.loading,
+            )
+
+            // And it must still be startable afterwards.
+            model.selectTab(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+
+            assertTrue(model.state.value.forYou.loaded)
+            assertEquals(
+                listOf(10, 11),
+                model.state.value.forYou.items
+                    .map { it.show.id },
+            )
+        }
+
+    @Test
+    fun `dismissing a suggestion removes it and records the name`() =
+        runTest(dispatcher) {
+            server.enqueue(MockResponse().setBody(recommendations(10, 11, 12)))
+
+            val library = FakeLibrary(listOf(show(1)))
+            val model = viewModel(library)
+            model.load(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+
+            model.dismiss(11)
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(10, 12),
+                model.state.value.forYou.items
+                    .map { it.show.id },
+            )
+            // The name travels with the id, so the un-hide list can be read by a human.
+            assertEquals(listOf(11 to "Rec 11"), library.dismissals)
+        }
+
+    @Test
+    fun `already dismissed shows never enter the suggestions`() =
+        runTest(dispatcher) {
+            server.enqueue(MockResponse().setBody(recommendations(10, 11, 12)))
+
+            val model = viewModel(FakeLibrary(listOf(show(1)), alreadyDismissed = setOf(11)))
+            model.load(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(10, 12),
+                model.state.value.forYou.items
+                    .map { it.show.id },
+            )
+        }
+
+    @Test
+    fun `refreshing pages through the pool without asking TMDB again`() =
+        runTest(dispatcher) {
+            // Two pages' worth, so a refresh has somewhere to go.
+            val ids = (100 until 100 + 45).toList()
+            server.enqueue(MockResponse().setBody(recommendations(*ids.toIntArray())))
+
+            val model = viewModel(FakeLibrary(listOf(show(1))))
+            model.load(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+
+            val firstPage =
+                model.state.value.forYou.items
+                    .map { it.show.id }
+            assertEquals(30, firstPage.size)
+            assertTrue(model.state.value.moreSuggestions)
+
+            val requestsBefore = server.requestCount
+            model.refreshForYou()
+            advanceUntilIdle()
+
+            val secondPage =
+                model.state.value.forYou.items
+                    .map { it.show.id }
+            assertEquals("the second page is the rest of the pool", 15, secondPage.size)
+            assertTrue("pages must not overlap", secondPage.none { it in firstPage })
+            assertEquals("paging costs no network", requestsBefore, server.requestCount)
+            assertFalse(model.state.value.moreSuggestions)
+        }
+
+    @Test
+    fun `refreshing past the end of the pool fetches again`() =
+        runTest(dispatcher) {
+            server.enqueue(MockResponse().setBody(recommendations(10, 11)))
+
+            val model = viewModel(FakeLibrary(listOf(show(1))))
+            model.load(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+
+            val requestsBefore = server.requestCount
+            server.enqueue(MockResponse().setBody(recommendations(20, 21)))
+            model.refreshForYou()
+            advanceUntilIdle()
+
+            assertEquals(requestsBefore + 1, server.requestCount)
+            assertEquals(
+                listOf(20, 21),
+                model.state.value.forYou.items
+                    .map { it.show.id },
+            )
+        }
+
+    @Test
+    fun `a missing key fails the tab rather than throwing`() =
+        runTest(dispatcher) {
+            val model = DiscoverViewModel(tmdb, FakeKey(null), FakeLibrary(listOf(show(1))))
+            model.load(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+
+            assertNotNull(model.state.value.forYou.error)
+            assertEquals(0, server.requestCount)
+        }
+}

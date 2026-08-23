@@ -252,6 +252,9 @@ class LibraryViewModel(
         }
     }
 
+    /** The backup folder's own name, for the settings screen. Null if it cannot be read. */
+    suspend fun backupFolderName(uri: String): String? = backups.displayName(uri.toUri())
+
     /** The current library as a transfer file. */
     suspend fun exportJson(): String =
         buildExport(library.all(), state.value.lastCheckedAt, Instant.now())

@@ -1,7 +1,6 @@
 package com.showtracker.app.ui.settings
 
 import android.content.Intent
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import com.showtracker.app.data.describeBackupTime
 import com.showtracker.app.ui.LibraryViewModel
 import com.showtracker.app.ui.theme.Danger
 import com.showtracker.app.ui.theme.StateAiring
@@ -42,6 +43,13 @@ fun BackupSection(viewModel: LibraryViewModel) {
     val folder by viewModel.backupFolder.collectAsState(initial = null)
     val lastBackupAt by viewModel.lastBackupAt.collectAsState(initial = null)
     val lastError by viewModel.lastBackupError.collectAsState(initial = null)
+
+    // Resolved from the provider rather than parsed out of the URI; see BackupFolder.
+    var folderName by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(folder) {
+        folderName = folder?.let { viewModel.backupFolderName(it) }
+    }
 
     var message by remember { mutableStateOf<String?>(null) }
     var failed by remember { mutableStateOf(false) }
@@ -103,7 +111,7 @@ fun BackupSection(viewModel: LibraryViewModel) {
         color = TextMuted,
     )
 
-    BackupStatus(folder, lastBackupAt, lastError)
+    BackupStatus(folder, folderName, lastBackupAt, lastError)
 
     OutlinedButton(
         onClick = { picker.launch(null) },
@@ -167,17 +175,23 @@ fun BackupSection(viewModel: LibraryViewModel) {
 @Composable
 private fun BackupStatus(
     folder: String?,
+    folderName: String?,
     lastBackupAt: String?,
     lastError: String?,
 ) {
-    folder?.let {
+    if (folder != null) {
         Text(
-            "Saving to ${folderLabel(it)}",
+            // The name can genuinely be unavailable - a provider that does not report one,
+            // or a folder that has since gone. Saying so beats printing the raw URI, which
+            // for Google Drive is a base64 blob and tells the user nothing at all.
+            folderName?.let { "Saving to $it" } ?: "Saving to the folder you chose.",
             style = MaterialTheme.typography.bodySmall,
             color = TextMuted,
         )
         Text(
-            lastBackupAt?.let { at -> "Last backup $at" } ?: "No backup taken yet.",
+            lastBackupAt
+                ?.let { at -> "Last backup ${describeBackupTime(at)}" }
+                ?: "No backup taken yet.",
             style = MaterialTheme.typography.bodySmall,
             color = TextFaint,
         )
@@ -195,16 +209,3 @@ private fun BackupStatus(
 }
 
 private const val KEPT = 14
-
-/**
- * Something human out of a tree URI.
- *
- * A SAF tree URI has no readable path, only a provider-specific document id. The tail of
- * that id is usually the folder name, which is enough to tell two folders apart - and this
- * is a label, not an identifier, so being approximate is fine. The full URI would be
- * unreadable and would tell the user less.
- */
-private fun folderLabel(uri: String): String {
-    val decoded = Uri.decode(uri)
-    return decoded.substringAfterLast('/', "").ifEmpty { decoded.substringAfterLast(':') }
-}

@@ -34,6 +34,41 @@ Phases 0-6 are all built: export (in `rn-final`), skeleton, domain + Room and
 the importer, TMDB client, Compose UI, WorkManager + notifications, and the
 import/export UI.
 
+Built since, beyond the original phases:
+
+- **Discover** (`ui/discover`). Two tabs. "For you" is a local recommender: one
+  `/tv/{id}/recommendations` call per followed show, pooled and ranked by how
+  many of the user's shows produced the same suggestion, tie-broken by a
+  vote-count-damped rating (`domain/Recommend.kt`). TMDB's own account-level
+  recommender is deliberately not used - it wants a TMDB login and the user's
+  ratings on TMDB's servers, and this app has no account. "Trending" is the
+  plain `/trending/tv/week` list, kept separate so a suggestion claiming to be
+  about your library always is. Refresh pages down the ranked pool rather than
+  re-rolling seeds, which would destroy the agreement signal the ranking rests
+  on. "Not interested" hides a show for good; Settings lists what is hidden and
+  offers it back.
+- **Backups.** Two independent mechanisms, and they answer different questions.
+  Android Auto Backup covers a lost phone; `LibraryBackupAgent` checkpoints the
+  WAL first, without which the cloud copy is the database as of the last
+  checkpoint and loses everything since. The scheduled export
+  (`notify/BackupWorker`) covers going back to how the library looked before a
+  mistake: a dated JSON written daily into a folder the user picks through SAF,
+  keeping the last 14.
+- **Schema is at version 4.** 2 added `inProgressSeason`, 3 added
+  `shows.overview` and the `dismissed` table, 4 added `dismissed.name`.
+
+Two things that are not obvious from the code:
+
+- A ViewModel here can be unit-tested because `ApiKeySource` and
+  `DiscoverLibrary` (`data/Sources.kt`) exist, and because `TmdbClient` takes
+  its IO dispatcher. Both seams were added after two logic bugs shipped in
+  `DiscoverViewModel` that a JVM test would have caught, and could not be
+  written because the ViewModel needed a `Context` to construct.
+- A schema change and the test assets are both generated into `app/schemas`, so
+  the first build after an entity change packages the *previous* schema and
+  `MigrationTest` fails against it. Build twice; the second run is the real
+  result.
+
 The logic worth porting carefully lives in `rn-final` under `src/core/`:
 `newness.ts` decides what counts as aired, `refresh.ts` folds TMDB responses into
 stored shows without trampling the user's progress. Both have Jest suites that

@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 class AutoBackupTest {
     private fun name(
@@ -82,6 +83,26 @@ class AutoBackupTest {
         assertEquals(names.size, backupsToPrune(names, keep = 0).size)
         // Guards against `drop(-1)`, which throws rather than dropping nothing.
         assertEquals(names.size, backupsToPrune(names, keep = -5).size)
+    }
+
+    @Test
+    fun `shows a stored instant in the local calendar, without the sub-second noise`() {
+        // Stored UTC because that is unambiguous and sorts; shown local because "05:53Z" is
+        // not an answer to "when did this last work" for someone whose clock says 08:22.
+        assertEquals(
+            // Lisbon is UTC+1 in August.
+            "23 Aug 2026, 07:53",
+            describeBackupTime("2026-08-23T06:53:23.726263Z", ZoneId.of("Europe/Lisbon")),
+        )
+        assertEquals(
+            "23 Aug 2026, 06:53",
+            describeBackupTime("2026-08-23T06:53:23.726263Z", ZoneId.of("UTC")),
+        )
+    }
+
+    @Test
+    fun `returns an unparseable timestamp unchanged rather than hiding it`() {
+        assertEquals("not a time", describeBackupTime("not a time", ZoneId.of("UTC")))
     }
 
     @Test

@@ -13,11 +13,11 @@ import kotlinx.coroutines.flow.map
  */
 class LibraryRepository(
     private val dao: ShowDao,
-) {
+) : DiscoverLibrary {
     fun observeLibrary(): Flow<List<TrackedShow>> =
         dao.observeAll().map { rows -> rows.map { it.toDomain() } }
 
-    suspend fun all(): List<TrackedShow> = dao.getAll().map { it.toDomain() }
+    override suspend fun all(): List<TrackedShow> = dao.getAll().map { it.toDomain() }
 
     suspend fun get(id: Int): TrackedShow? = dao.getById(id)?.toDomain()
 
@@ -25,7 +25,7 @@ class LibraryRepository(
 
     fun observeDismissed(): Flow<Set<Int>> = dao.observeDismissed().map { it.toSet() }
 
-    suspend fun dismissedIds(): Set<Int> = dao.dismissedIds().toSet()
+    override suspend fun dismissedIds(): Set<Int> = dao.dismissedIds().toSet()
 
     /** Hidden shows, newest first, for the list that offers to un-hide them. */
     fun observeDismissedShows(): Flow<List<DismissedShow>> =
@@ -33,7 +33,7 @@ class LibraryRepository(
             entries.map { DismissedShow(it.id, it.name, it.dismissedAt) }
         }
 
-    suspend fun dismiss(
+    override suspend fun dismiss(
         id: Int,
         name: String,
         at: String,

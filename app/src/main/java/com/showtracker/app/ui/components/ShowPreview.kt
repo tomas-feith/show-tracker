@@ -1,6 +1,6 @@
 package com.showtracker.app.ui.components
 
-import com.showtracker.app.data.Settings
+import com.showtracker.app.data.ApiKeySource
 import com.showtracker.app.domain.SearchResult
 import com.showtracker.app.domain.ShowDetail
 import com.showtracker.app.network.TmdbClient
@@ -40,7 +40,7 @@ data class Preview(
  */
 class PreviewController(
     private val tmdb: TmdbClient,
-    private val settings: Settings,
+    private val settings: ApiKeySource,
     private val scope: CoroutineScope,
 ) {
     private val _preview = MutableStateFlow<Preview?>(null)
