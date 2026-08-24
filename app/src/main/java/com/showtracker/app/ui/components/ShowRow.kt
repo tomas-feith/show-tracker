@@ -301,11 +301,25 @@ fun Divider(modifier: Modifier = Modifier) {
     )
 }
 
-/** Row semantics as a screen reader should hear them: one sentence, not four labels. */
+/**
+ * Row semantics as a screen reader should hear them: one sentence, not four labels.
+ *
+ * Everything the row draws has to be in here, because [RowSemantics] clears the children's
+ * own semantics: anything left out of this string is invisible to a screen reader no matter
+ * how plainly it is printed. The score and episode figures were exactly that until this
+ * carried them, and the watched-through line before them.
+ */
 fun describeRow(
     show: TrackedShow,
     today: LocalDate,
-): String = "${show.name}. ${label(showState(show, today), show).text}"
+): String =
+    listOfNotNull(
+        show.name,
+        label(showState(show, today), show).text,
+        "Watched through season ${show.watchedThroughSeason}"
+            .takeIf { show.watchedThroughSeason > 0 },
+        describeMetaAloud(show),
+    ).joinToString(". ", postfix = ".")
 
 @Composable
 fun RowSemantics(

@@ -70,6 +70,31 @@ internal fun describeShape(show: TrackedShow): String? {
     return parts.joinToString(" - ").takeIf { it.isNotEmpty() }
 }
 
+/**
+ * The same figures as [describeShape] and the score, said rather than shown.
+ *
+ * A separate string from the visible one because the visible one is abbreviated for a row
+ * that has to fit: "60m each" is read out as "sixty em each", and "8.4" alone does not say
+ * what it is out of. What a screen reader gets should be the sentence a person would say,
+ * not the label a person would skim.
+ *
+ * Null when TMDB has given neither, so nothing is appended to the row's description.
+ */
+internal fun describeMetaAloud(show: TrackedShow): String? {
+    val count = show.numberOfEpisodes.takeIf { it > 0 }
+    val plural = count != null && count > 1
+
+    val parts =
+        listOfNotNull(
+            if (show.voteCount > 0) "Rated ${formatScore(show.voteAverage)} out of 10" else null,
+            count?.let { if (it == 1) "1 episode" else "$it episodes" },
+            show.episodeRunTime?.let {
+                if (plural) "$it minutes each" else "$it minutes"
+            },
+        )
+    return parts.joinToString(", ").takeIf { it.isNotEmpty() }
+}
+
 /** How many people voted, with thousands separated. */
 private fun describeVotes(voteCount: Int): String =
     NumberFormat.getIntegerInstance(Locale.US).format(voteCount) + " votes"
