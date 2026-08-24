@@ -94,6 +94,8 @@ fun PreviewSheet(
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMuted,
                     )
+                    val (average, votes) = preview.score
+                    ScoreTag(average, votes, withVotes = true)
                     preview.detail?.let { Counts(it) }
                 }
             }

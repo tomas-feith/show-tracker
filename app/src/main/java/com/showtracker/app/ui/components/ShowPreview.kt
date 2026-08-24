@@ -25,10 +25,27 @@ data class Preview(
     val name: String,
     val posterPath: String?,
     val firstAirDate: String?,
+    /**
+     * The score off the search hit, so it is on screen before the detail fetch returns.
+     *
+     * The list the user tapped already showed it, and a figure that vanished on opening
+     * the sheet and came back a moment later would read as the app changing its mind. TMDB
+     * returns the same numbers in both responses, so nothing moves when [detail] lands.
+     */
+    val voteAverage: Double = 0.0,
+    val voteCount: Int = 0,
     val loading: Boolean = true,
     val detail: ShowDetail? = null,
     val error: String? = null,
-)
+) {
+    /** Prefer the detail fetch once it is in: it is the fresher of two identical figures. */
+    val score: Pair<Double, Int>
+        get() =
+            detail
+                ?.takeIf { it.voteCount > 0 }
+                ?.let { it.voteAverage to it.voteCount }
+                ?: (voteAverage to voteCount)
+}
 
 /**
  * Opening, filling and closing the preview sheet.
@@ -53,6 +70,8 @@ class PreviewController(
                 name = result.name,
                 posterPath = result.posterPath,
                 firstAirDate = result.firstAirDate,
+                voteAverage = result.voteAverage,
+                voteCount = result.voteCount,
             )
 
         scope.launch {
