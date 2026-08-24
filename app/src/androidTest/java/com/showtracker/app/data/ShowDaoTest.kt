@@ -40,6 +40,12 @@ class ShowDaoTest {
         knownAiredSeason = 2,
         addedAt = "2026-01-05T10:00:00.000Z",
         lastCheckedAt = null,
+        voteAverage = 8.4,
+        voteCount = 4321,
+        genres = "Drama",
+        episodeRunTime = 55,
+        type = "Miniseries",
+        numberOfEpisodes = 10,
     )
 
     private fun stored(): ShowEntity = runBlocking { checkNotNull(dao.getById(1)).show }
