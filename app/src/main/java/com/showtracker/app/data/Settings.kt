@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.showtracker.app.domain.LibrarySort
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -38,6 +39,7 @@ class Settings(
         val LAST_BACKUP_AT = stringPreferencesKey("last_backup_at")
         val LAST_BACKUP_ERROR = stringPreferencesKey("last_backup_error")
         val BACKFILLED_VERSION = intPreferencesKey("backfilled_schema_version")
+        val LIBRARY_SORT = stringPreferencesKey("library_sort")
     }
 
     override val apiKey: Flow<String?> = context.settingsStore.data.map { it[API_KEY] }
@@ -74,6 +76,25 @@ class Settings(
     val backfilledVersion: Flow<Int> =
         context.settingsStore.data.map { it[BACKFILLED_VERSION] ?: 0 }
 
+    /**
+     * How the library screen is ordered.
+     *
+     * Persisted, unlike the search box on the same screen, because the two are different
+     * kinds of thing: a search is a question asked once, and an order is how someone wants
+     * their library to look. Being asked to set it again on every cold start would make it
+     * useless for the one case it exists for - "I always want the shortest thing first".
+     *
+     * An unreadable value falls back to the default rather than throwing. The only ways to
+     * get one are a downgrade or a hand-edited file, and neither is worth refusing to draw
+     * the library over.
+     */
+    val librarySort: Flow<LibrarySort> =
+        context.settingsStore.data.map { prefs ->
+            prefs[LIBRARY_SORT]?.let { stored ->
+                LibrarySort.entries.firstOrNull { it.name == stored }
+            } ?: LibrarySort.ATTENTION
+        }
+
     /** A one-shot read, for a background worker that has no reason to observe. */
     suspend fun currentApiKey(): String? = apiKey.first()
 
@@ -90,6 +111,10 @@ class Settings(
 
     suspend fun setLastCheckedAt(timestamp: String) {
         context.settingsStore.edit { it[LAST_CHECKED_AT] = timestamp }
+    }
+
+    suspend fun setLibrarySort(sort: LibrarySort) {
+        context.settingsStore.edit { it[LIBRARY_SORT] = sort.name }
     }
 
     suspend fun setBackfilledVersion(version: Int) {

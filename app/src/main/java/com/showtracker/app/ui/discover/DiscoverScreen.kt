@@ -134,6 +134,8 @@ fun DiscoverScreen(
                             subtitle = describeReason(candidate.becauseOf),
                             tracked = candidate.show.id in tracked,
                             onClick = { viewModel.openPreview(candidate.show) },
+                            voteAverage = candidate.show.voteAverage,
+                            voteCount = candidate.show.voteCount,
                         )
                     }
                 }
@@ -152,6 +154,8 @@ fun DiscoverScreen(
                             subtitle = result.firstAirDate?.take(4) ?: "Date unknown",
                             tracked = result.id in tracked,
                             onClick = { viewModel.openPreview(result) },
+                            voteAverage = result.voteAverage,
+                            voteCount = result.voteCount,
                         )
                     }
                 }

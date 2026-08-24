@@ -12,6 +12,8 @@ import com.showtracker.app.data.Settings
 import com.showtracker.app.data.backupFileName
 import com.showtracker.app.data.buildExport
 import com.showtracker.app.data.parseExport
+import com.showtracker.app.domain.LibraryFilters
+import com.showtracker.app.domain.LibrarySort
 import com.showtracker.app.domain.ShowFetcher
 import com.showtracker.app.domain.TrackedShow
 import com.showtracker.app.domain.initialWatchedThrough
@@ -39,8 +41,17 @@ data class LibraryUiState(
     val apiKey: String? = null,
     val shows: List<TrackedShow> = emptyList(),
     val lastCheckedAt: String? = null,
+    val sort: LibrarySort = LibrarySort.ATTENTION,
 )
 
+/**
+ * This view model backs four screens - the library, a show, the settings data section and
+ * backups - so it is over detekt's function count. Splitting it is a real job and a
+ * separate one: the screens share `state`, and pulling any of them out means deciding what
+ * owns the library flow first. Suppressed here rather than raised in `detekt.yml`, so the
+ * exception stays attached to the file that earned it.
+ */
+@Suppress("TooManyFunctions")
 class LibraryViewModel(
     private val library: LibraryRepository,
     private val settings: Settings,
@@ -57,9 +68,16 @@ class LibraryViewModel(
             library.observeLibrary(),
             settings.apiKey,
             settings.lastCheckedAt,
-        ) { shows, key, checked ->
+            settings.librarySort,
+        ) { shows, key, checked, sort ->
             cachedKey = key
-            LibraryUiState(ready = true, apiKey = key, shows = shows, lastCheckedAt = checked)
+            LibraryUiState(
+                ready = true,
+                apiKey = key,
+                shows = shows,
+                lastCheckedAt = checked,
+                sort = sort,
+            )
         }.stateIn(
             scope = viewModelScope,
             // Keeps the library warm across a configuration change without holding the
@@ -76,6 +94,29 @@ class LibraryViewModel(
 
     fun dismissError() {
         _error.value = null
+    }
+
+    fun setSort(sort: LibrarySort) {
+        viewModelScope.launch { settings.setLibrarySort(sort) }
+    }
+
+    /**
+     * What is currently being hidden from the list.
+     *
+     * Held here rather than in `Settings`, unlike the sort order, and deliberately not
+     * persisted: an order is how someone wants their library to look, but a filter is a
+     * question asked for one evening - "what is short and good tonight" - and a library
+     * that came back three days later still hiding four fifths of itself would read as
+     * shows having gone missing. Living on the view model rather than in the screen keeps
+     * it across opening a show and coming back, which is the same trip the filter was set
+     * to make.
+     */
+    private val _filters = MutableStateFlow(LibraryFilters())
+    val filters: StateFlow<LibraryFilters> = _filters.asStateFlow()
+
+    /** Clearing is [LibraryFilters] with nothing set, so there is no separate reset. */
+    fun setFilters(filters: LibraryFilters) {
+        _filters.value = filters
     }
 
     private fun requireKey(): String = cachedKey ?: error("No TMDB key configured.")

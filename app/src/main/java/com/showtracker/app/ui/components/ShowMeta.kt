@@ -75,6 +75,77 @@ private fun describeVotes(voteCount: Int): String =
     NumberFormat.getIntegerInstance(Locale.US).format(voteCount) + " votes"
 
 /**
+ * Types TMDB gives nearly everything, and which say nothing on screen.
+ *
+ * "Scripted" is the default for drama and comedy alike, so printing it would add a word to
+ * almost every show while distinguishing none of them. "Video" is a catalogue artefact.
+ */
+private val UNREMARKABLE_TYPES = setOf("", "Scripted", "Video")
+
+/**
+ * The header line: year, what kind of thing this is, and where it is up to.
+ *
+ * The type is named only when it is worth naming. It is the field that separates a
+ * six-episode "Miniseries" from an ongoing drama, and TMDB's `status` cannot: a miniseries
+ * still airing reads as "Returning Series" there, which is true of the production and
+ * misleading about the show.
+ *
+ * Each part is dropped when absent rather than rendered as a gap, because a show with no
+ * air date is a real case - TMDB has announced it without scheduling it.
+ */
+internal fun describeKind(show: TrackedShow): String =
+    listOfNotNull(
+        show.firstAirDate?.take(4),
+        show.type.takeUnless { it in UNREMARKABLE_TYPES },
+        show.status.takeIf { it.isNotBlank() },
+    ).joinToString(" - ")
+
+/**
+ * The star and the score, or nothing when nobody has voted.
+ *
+ * Its own composable because it is wanted in three places - the library rows, the detail
+ * header, and the search and discover rows, which offer shows that are not in the library
+ * and so have no [TrackedShow] to hand, only the vote fields off a search hit.
+ */
+@Composable
+fun ScoreTag(
+    voteAverage: Double,
+    voteCount: Int,
+    modifier: Modifier = Modifier,
+    withVotes: Boolean = false,
+) {
+    if (voteCount <= 0) return
+
+    Row(
+        modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            Icons.Default.Star,
+            // Decorative: the score beside it is the label, and "star, 8.4" is not how
+            // anyone reads a rating out.
+            contentDescription = null,
+            tint = StateNew,
+            modifier = Modifier.size(13.dp),
+        )
+        Text(
+            formatScore(voteAverage),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        if (withVotes) {
+            Text(
+                describeVotes(voteCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = TextFaint,
+            )
+        }
+    }
+}
+
+/**
  * The score and shape line, or nothing at all when TMDB has given neither.
  *
  * A 0 vote count draws no score rather than "0.0". That is what a show holds both before
@@ -101,29 +172,7 @@ fun ShowMeta(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        if (scored) {
-            Icon(
-                Icons.Default.Star,
-                // Decorative: the score beside it is the label, and "star, 8.4" is not how
-                // anyone reads a rating out.
-                contentDescription = null,
-                tint = StateNew,
-                modifier = Modifier.size(13.dp),
-            )
-            Text(
-                formatScore(show.voteAverage),
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            if (withVotes) {
-                Text(
-                    describeVotes(show.voteCount),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextFaint,
-                )
-            }
-        }
+        ScoreTag(show.voteAverage, show.voteCount, withVotes = withVotes)
 
         if (shape != null) {
             Text(

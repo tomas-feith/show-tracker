@@ -242,6 +242,8 @@ fun ResultRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     subtitleColor: Color = TextMuted,
+    voteAverage: Double = 0.0,
+    voteCount: Int = 0,
 ) {
     Row(
         modifier =
@@ -270,6 +272,12 @@ fun ResultRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+
+            // Below the subtitle rather than inside it: the subtitle is the reason this row
+            // is on the screen - "Because you follow A, B and 4 others" - and it already
+            // runs to two lines. There is no episode count to show beside the score, since
+            // a search hit carries nothing but the vote fields.
+            ScoreTag(voteAverage, voteCount)
         }
 
         if (tracked) {

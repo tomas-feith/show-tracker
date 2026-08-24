@@ -49,6 +49,7 @@ import com.showtracker.app.domain.seasonInProgress
 import com.showtracker.app.ui.LibraryViewModel
 import com.showtracker.app.ui.components.Poster
 import com.showtracker.app.ui.components.ShowMeta
+import com.showtracker.app.ui.components.describeKind
 import com.showtracker.app.ui.theme.Accent
 import com.showtracker.app.ui.theme.Border
 import com.showtracker.app.ui.theme.Danger
@@ -128,8 +129,7 @@ fun DetailScreen(
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                     Text(
-                        listOfNotNull(show.firstAirDate?.take(4), show.status)
-                            .joinToString(" - "),
+                        describeKind(show),
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMuted,
                     )

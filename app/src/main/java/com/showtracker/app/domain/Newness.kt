@@ -297,11 +297,105 @@ private val ShowState.order: Int
         }
 
 /**
+ * The orders the library can be read in.
+ *
+ * [ATTENTION] is the app's own opinion and stays the default: it is the only one that
+ * answers "what should I do about my shows", which is what the screen is for. The rest
+ * answer "what do I put on now", and each is a different way of asking it - by how good it
+ * is, by how much of an evening it costs, by how far behind you have fallen.
+ *
+ * [label] is what the menu says. It is on the enum rather than in the composable so the
+ * name and the ordering it promises cannot drift apart.
+ */
+enum class LibrarySort(
+    val label: String,
+) {
+    ATTENTION("What needs attention"),
+    NAME("Name"),
+    RELEASED("Newest first"),
+    SCORE("Highest score"),
+    RUNTIME("Shortest episodes"),
+    BACKLOG("Biggest backlog"),
+}
+
+/**
+ * Aired seasons the user has not finished, including one they are partway through.
+ *
+ * Counted against the watermark rather than from it, so a library where someone skipped
+ * ahead to the newest season still reports the older ones as waiting. Specials are excluded
+ * by [realSeasons]: nobody's backlog is a season 0.
+ */
+fun seasonsRemaining(
+    show: TrackedShow,
+    today: LocalDate,
+): Int =
+    realSeasons(show.seasons).count {
+        hasAired(it, today) && it.seasonNumber > show.watchedThroughSeason
+    }
+
+/**
+ * Order the library.
+ *
+ * Every order ends at the name, so the list is total: without a final tiebreak the shows
+ * that tie - and with a small library most of them do - would sit in whatever order the
+ * database handed them over in, which changes between reads and makes the list look like it
+ * is shuffling itself.
+ *
+ * What TMDB has not told us sorts last in each case rather than first. A show with no score
+ * is not a bad show and a show with no runtime is not a short one, and putting either at
+ * the head of a list the user asked to rank would be an answer the data does not support.
+ */
+fun sortLibrary(
+    shows: List<TrackedShow>,
+    today: LocalDate,
+    sort: LibrarySort = LibrarySort.ATTENTION,
+): List<TrackedShow> =
+    when (sort) {
+        LibrarySort.ATTENTION -> {
+            sortByAttention(shows, today)
+        }
+
+        LibrarySort.NAME -> {
+            shows.sortedWith(byName)
+        }
+
+        LibrarySort.RELEASED -> {
+            // Undated last: descending puts "" at the end, which is where a show TMDB has
+            // announced without scheduling belongs in a list headed "newest first".
+            shows.sortedWith(
+                compareByDescending<TrackedShow> { it.firstAirDate.orEmpty() }.then(byName),
+            )
+        }
+
+        LibrarySort.SCORE -> {
+            shows.sortedWith(
+                compareByDescending<TrackedShow> {
+                    // Unvoted below every real score rather than level with 0.0, which is
+                    // what the row holds before its first refresh as well.
+                    if (it.voteCount > 0) it.voteAverage else Double.NEGATIVE_INFINITY
+                }.then(byName),
+            )
+        }
+
+        LibrarySort.RUNTIME -> {
+            shows.sortedWith(
+                compareBy<TrackedShow> { it.episodeRunTime ?: Int.MAX_VALUE }.then(byName),
+            )
+        }
+
+        LibrarySort.BACKLOG -> {
+            shows.sortedWith(
+                compareByDescending<TrackedShow> { seasonsRemaining(it, today) }.then(byName),
+            )
+        }
+    }
+
+/**
  * Order the library so the things demanding attention float to the top: seasons already
  * underway first, then unseen new seasons (most recent drop first), then imminent episodes,
  * then announced seasons by nearness, then everything dormant by name.
  */
-fun sortLibrary(
+private fun sortByAttention(
     shows: List<TrackedShow>,
     today: LocalDate,
 ): List<TrackedShow> {
@@ -381,6 +475,14 @@ private val nameOrder: Comparator<String> =
         // Collator implements the raw Comparator<Object>, so it needs wrapping to be
         // usable as a Comparator<String>.
         .let { collator -> Comparator { a, b -> collator.compare(a, b) } }
+
+/**
+ * The final tiebreak in every order, so no list depends on the database's row order.
+ *
+ * Declared after [nameOrder] because it reads it: top-level properties are initialised in
+ * file order, and a comparator built above it would capture a null Collator.
+ */
+private val byName: Comparator<TrackedShow> = compareBy(nameOrder) { it.name }
 
 private const val DAYS_PER_MONTH = 30
 private const val DAYS_PER_YEAR = 365

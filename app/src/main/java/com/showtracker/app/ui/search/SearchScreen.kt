@@ -100,6 +100,8 @@ fun SearchScreen(
                         subtitle = result.firstAirDate?.take(4) ?: "Date unknown",
                         tracked = result.id in tracked,
                         onClick = { searchViewModel.openPreview(result) },
+                        voteAverage = result.voteAverage,
+                        voteCount = result.voteCount,
                     )
                     Divider()
                 }

@@ -12,9 +12,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -42,8 +45,12 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.showtracker.app.domain.LibraryFilters
+import com.showtracker.app.domain.LibrarySort
 import com.showtracker.app.domain.TrackedShow
+import com.showtracker.app.domain.applyFilters
 import com.showtracker.app.domain.filterLibrary
+import com.showtracker.app.domain.libraryGenres
 import com.showtracker.app.domain.sortLibrary
 import com.showtracker.app.ui.LibraryViewModel
 import com.showtracker.app.ui.components.Divider
@@ -75,10 +82,19 @@ fun LibraryScreen(
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
 
-    // Filtered before sorting, so the order of what survives is the order it would have had
-    // in the full library - a search result that reshuffled itself would be harder to read,
-    // not easier.
-    val ordered = sortLibrary(filterLibrary(state.shows, query), today)
+    // Which control is open. Both belong to the screen: a menu left open across a trip to a
+    // show and back would reopen over a list the user has stopped thinking about.
+    var sorting by rememberSaveable { mutableStateOf(false) }
+    var filtering by rememberSaveable { mutableStateOf(false) }
+
+    val filters by viewModel.filters.collectAsStateWithLifecycle()
+
+    // Narrowed before sorting, so the order of what survives is the order it would have had
+    // in the full library - a result that reshuffled itself would be harder to read, not
+    // easier. The search box runs inside the filters rather than beside them: it answers
+    // "where is this show", which is a question about what is on screen now.
+    val visible = filterLibrary(applyFilters(state.shows, filters, today), query)
+    val ordered = sortLibrary(visible, today, state.sort)
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -91,46 +107,32 @@ fun LibraryScreen(
                         titleContentColor = MaterialTheme.colorScheme.onBackground,
                     ),
                 actions = {
-                    if (refreshing) {
-                        CircularProgressIndicator(
-                            Modifier.padding(end = 16.dp).size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = Accent,
-                        )
-                    }
-                    if (state.shows.isNotEmpty()) {
-                        IconButton(onClick = {
-                            searching = !searching
-                            // Closing clears, so the library is never left silently
-                            // filtered behind a hidden box.
-                            if (!searching) query = ""
-                        }) {
-                            Icon(
-                                if (searching) Icons.Default.Close else Icons.Default.Search,
-                                contentDescription =
-                                    if (searching) "Close search" else "Search your shows",
-                                tint = TextMuted,
-                            )
-                        }
-                    }
-                    // Only with a key: every destination behind it is a TMDB call, and an
-                    // empty screen saying so is worse than not offering the trip.
-                    if (state.apiKey != null) {
-                        IconButton(onClick = onDiscover) {
-                            Icon(
-                                Icons.Default.AutoAwesome,
-                                contentDescription = "Discover shows",
-                                tint = TextMuted,
-                            )
-                        }
-                    }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            tint = TextMuted,
-                        )
-                    }
+                    LibraryActions(
+                        bar =
+                            LibraryBar(
+                                refreshing = refreshing,
+                                hasShows = state.shows.isNotEmpty(),
+                                hasKey = state.apiKey != null,
+                                sort = state.sort,
+                                filtersActive = filters.active,
+                                sorting = sorting,
+                                searching = searching,
+                            ),
+                        onBar =
+                            LibraryBarActions(
+                                onSortingChange = { sorting = it },
+                                onPickSort = viewModel::setSort,
+                                onOpenFilters = { filtering = true },
+                                onSearchingChange = { open ->
+                                    searching = open
+                                    // Closing clears, so the library is never left
+                                    // silently filtered behind a hidden box.
+                                    if (!open) query = ""
+                                },
+                                onDiscover = onDiscover,
+                                onOpenSettings = onOpenSettings,
+                            ),
+                    )
                 },
             )
         },
@@ -147,17 +149,19 @@ fun LibraryScreen(
                 SearchField(query, onQueryChange = { query = it })
             }
 
-            error?.let { message ->
-                Text(
-                    text = message,
-                    color = Danger,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.dismissError() }
-                            .padding(16.dp),
+            // The disclosure. A filtered library that does not say it is filtered is a
+            // library with shows missing from it, and the way back has to be one tap from
+            // wherever the surprise happens.
+            if (filters.active) {
+                FilterSummary(
+                    showing = visible.size,
+                    total = state.shows.size,
+                    onClear = { viewModel.setFilters(LibraryFilters()) },
                 )
+            }
+
+            error?.let { message ->
+                ErrorLine(message, onDismiss = viewModel::dismissError)
             }
 
             when {
@@ -194,6 +198,161 @@ fun LibraryScreen(
             }
         }
     }
+
+    if (filtering) {
+        FilterSheet(
+            filters = filters,
+            genres = libraryGenres(state.shows),
+            onChange = viewModel::setFilters,
+            onClear = {
+                viewModel.setFilters(LibraryFilters())
+                filtering = false
+            },
+            onClose = { filtering = false },
+        )
+    }
+}
+
+/** What the top bar draws. */
+private data class LibraryBar(
+    val refreshing: Boolean,
+    val hasShows: Boolean,
+    val hasKey: Boolean,
+    val sort: LibrarySort,
+    val filtersActive: Boolean,
+    val sorting: Boolean,
+    val searching: Boolean,
+)
+
+/**
+ * What its buttons do. Separate from [LibraryBar] so what is state and what is a callback
+ * stays obvious at the call site.
+ */
+private data class LibraryBarActions(
+    val onSortingChange: (Boolean) -> Unit,
+    val onPickSort: (LibrarySort) -> Unit,
+    val onOpenFilters: () -> Unit,
+    val onSearchingChange: (Boolean) -> Unit,
+    val onDiscover: () -> Unit,
+    val onOpenSettings: () -> Unit,
+)
+
+/**
+ * The top bar's buttons.
+ *
+ * Pulled out of [LibraryScreen] because it had grown past what one function should hold,
+ * not because it is reused. Every piece of state it needs is passed in, so the bar has no
+ * opinion about where the library comes from.
+ */
+@Composable
+private fun LibraryActions(
+    bar: LibraryBar,
+    onBar: LibraryBarActions,
+) {
+    if (bar.refreshing) {
+        CircularProgressIndicator(
+            Modifier.padding(end = 16.dp).size(20.dp),
+            strokeWidth = 2.dp,
+            color = Accent,
+        )
+    }
+    if (bar.hasShows) {
+        Box {
+            IconButton(onClick = { onBar.onSortingChange(true) }) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Sort,
+                    contentDescription = "Sort your shows",
+                    tint = TextMuted,
+                )
+            }
+            SortMenu(
+                expanded = bar.sorting,
+                current = bar.sort,
+                onPick = onBar.onPickSort,
+                onDismiss = { onBar.onSortingChange(false) },
+            )
+        }
+        IconButton(onClick = onBar.onOpenFilters) {
+            Icon(
+                Icons.Default.FilterList,
+                contentDescription = "Filter your shows",
+                // Lit while anything is hidden, so the one control that can
+                // empty the screen says so from the bar itself.
+                tint = if (bar.filtersActive) Accent else TextMuted,
+            )
+        }
+        IconButton(onClick = { onBar.onSearchingChange(!bar.searching) }) {
+            Icon(
+                if (bar.searching) Icons.Default.Close else Icons.Default.Search,
+                contentDescription =
+                    if (bar.searching) "Close search" else "Search your shows",
+                tint = TextMuted,
+            )
+        }
+    }
+    // Only with a key: every destination behind it is a TMDB call, and an
+    // empty screen saying so is worse than not offering the trip.
+    if (bar.hasKey) {
+        IconButton(onClick = onBar.onDiscover) {
+            Icon(
+                Icons.Default.AutoAwesome,
+                contentDescription = "Discover shows",
+                tint = TextMuted,
+            )
+        }
+    }
+    IconButton(onClick = onBar.onOpenSettings) {
+        Icon(
+            Icons.Default.Settings,
+            contentDescription = "Settings",
+            tint = TextMuted,
+        )
+    }
+}
+
+/**
+ * The disclosure line, shown only while something is hidden.
+ *
+ * A filtered library that does not say it is filtered is a library with shows missing from
+ * it, so the count and the way back are on screen together, above the list rather than
+ * buried in the sheet that set them.
+ */
+@Composable
+private fun FilterSummary(
+    showing: Int,
+    total: Int,
+    onClear: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Showing $showing of $total",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextMuted,
+        )
+        TextButton(onClick = onClear) { Text("Clear filters", color = Accent) }
+    }
+}
+
+/** The refresh failure, tappable to dismiss. */
+@Composable
+private fun ErrorLine(
+    message: String,
+    onDismiss: () -> Unit,
+) {
+    Text(
+        text = message,
+        color = Danger,
+        style = MaterialTheme.typography.bodySmall,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onDismiss)
+                .padding(16.dp),
+    )
 }
 
 /**

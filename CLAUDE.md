@@ -65,7 +65,7 @@ Built since, beyond the original phases:
   client averages it when present, falls back to the runtime on the last aired
   episode, and stores null when there is neither. A 0 would render as "0m".
 
-Two things that are not obvious from the code:
+Four things that are not obvious from the code:
 
 - A ViewModel here can be unit-tested because `ApiKeySource` and
   `DiscoverLibrary` (`data/Sources.kt`) exist, and because `TmdbClient` takes
@@ -76,6 +76,22 @@ Two things that are not obvious from the code:
   the first build after an entity change packages the *previous* schema and
   `MigrationTest` fails against it. Build twice; the second run is the real
   result.
+- **`assembleDebug` and `testDebugUnitTest` do not compile `src/androidTest`.**
+  A local run of both can be green while `compileDebugAndroidTestKotlin` is
+  broken, and CI - which does build it - then fails on a push that looked
+  clean. `ShowDaoTest` constructs `ShowEntity` exhaustively, so every added
+  column breaks it. Run `:app:assembleDebugAndroidTest` before pushing; it needs
+  no device, unlike `connectedDebugAndroidTest`.
+- **`LibraryViewModel.BACKFILL_VERSION` needs bumping whenever a migration adds
+  a column TMDB is the source of.** It is what makes the app refresh once on the
+  next open instead of waiting up to six hours for the library to go stale, so
+  forgetting it leaves the new column blank on the screen the user just updated
+  to see it. It is deliberately not `ShowDatabase.VERSION`: a migration that
+  adds something the user owns rather than something TMDB sends - `dismissed.name`
+  was one - needs no refetch. The value is recorded in `Settings` after a refresh
+  that lost nothing, rather than inferred from the rows: "every show has no
+  genres" cannot tell a library that has not refreshed yet from one TMDB has no
+  genres for, and the second re-refreshed on every app open, for ever.
 
 The logic worth porting carefully lives in `rn-final` under `src/core/`:
 `newness.ts` decides what counts as aired, `refresh.ts` folds TMDB responses into
