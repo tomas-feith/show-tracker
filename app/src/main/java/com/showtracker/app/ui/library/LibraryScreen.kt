@@ -93,8 +93,13 @@ fun LibraryScreen(
     // in the full library - a result that reshuffled itself would be harder to read, not
     // easier. The search box runs inside the filters rather than beside them: it answers
     // "where is this show", which is a question about what is on screen now.
-    val visible = filterLibrary(applyFilters(state.shows, filters, today), query)
-    val ordered = sortLibrary(visible, today, state.sort)
+    // Remembered rather than recomputed on every recomposition: typing in the search box
+    // recomposes on each keystroke, and all three passes walk every season list.
+    val filtered =
+        remember(state.shows, filters, today) { applyFilters(state.shows, filters, today) }
+    val visible = remember(filtered, query) { filterLibrary(filtered, query) }
+    val ordered =
+        remember(visible, state.sort, today) { sortLibrary(visible, today, state.sort) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -154,7 +159,10 @@ fun LibraryScreen(
             // wherever the surprise happens.
             if (filters.active) {
                 FilterSummary(
-                    showing = visible.size,
+                    // Before the search box, which the line does not mention and its
+                    // button does not clear: counting it would promise a number that
+                    // tapping "Clear filters" does not restore.
+                    showing = filtered.size,
                     total = state.shows.size,
                     onClear = { viewModel.setFilters(LibraryFilters()) },
                 )
@@ -164,37 +172,15 @@ fun LibraryScreen(
                 ErrorLine(message, onDismiss = viewModel::dismissError)
             }
 
-            when {
-                !state.ready -> {
-                    // Deliberately blank until the first database and settings emission
-                    // arrives. A flash of "no TMDB key yet" before the real state lands
-                    // reads as data loss.
-                }
-
-                state.apiKey == null -> {
-                    Empty(
-                        title = "No TMDB key yet",
-                        body = "Open Settings and paste a TMDB key to start following shows.",
-                    )
-                }
-
-                ordered.isEmpty() && query.isNotBlank() -> {
-                    Empty(
-                        title = "No shows match",
-                        body = "Nothing in your library is called \"${query.trim()}\".",
-                    )
-                }
-
-                ordered.isEmpty() -> {
-                    Empty(
-                        title = "Nothing followed yet",
-                        body = "Tap the plus button to find a show.",
-                    )
-                }
-
-                else -> {
-                    Library(ordered, today, onOpenShow)
-                }
+            if (ordered.isEmpty()) {
+                LibraryPlaceholder(
+                    ready = state.ready,
+                    hasKey = state.apiKey != null,
+                    query = query,
+                    filtersActive = filters.active,
+                )
+            } else {
+                Library(ordered, today, onOpenShow)
             }
         }
     }
@@ -202,7 +188,10 @@ fun LibraryScreen(
     if (filtering) {
         FilterSheet(
             filters = filters,
-            genres = libraryGenres(state.shows),
+            // Union with what is already selected: unfollowing the last comedy show while
+            // filtering by Comedy would otherwise remove the only control that could
+            // untoggle it, leaving an empty list and no way back but "Clear all".
+            genres = (libraryGenres(state.shows) + filters.genres).distinct().sorted(),
             onChange = viewModel::setFilters,
             onClear = {
                 viewModel.setFilters(LibraryFilters())
@@ -307,6 +296,65 @@ private fun LibraryActions(
             contentDescription = "Settings",
             tint = TextMuted,
         )
+    }
+}
+
+/**
+ * What stands in for the list when there is nothing to draw.
+ *
+ * Four different nothings, and telling them apart is the whole job: a library that has not
+ * loaded, one with no key, one narrowed to nothing by a search or a filter, and one that is
+ * genuinely empty. Before the filters existed the last case could be assumed, and a user
+ * with thirty shows who picked "9.0+" was told to tap the plus button and go find a show.
+ */
+@Composable
+private fun LibraryPlaceholder(
+    ready: Boolean,
+    hasKey: Boolean,
+    query: String,
+    filtersActive: Boolean,
+) {
+    when {
+        // Deliberately blank until the first database and settings emission arrives. A
+        // flash of "no TMDB key yet" before the real state lands reads as data loss.
+        !ready -> {
+            Unit
+        }
+
+        !hasKey -> {
+            Empty(
+                title = "No TMDB key yet",
+                body = "Open Settings and paste a TMDB key to start following shows.",
+            )
+        }
+
+        query.isNotBlank() -> {
+            Empty(
+                title = "No shows match",
+                body =
+                    if (filtersActive) {
+                        // Otherwise the app asserts the show is not in the library, when it
+                        // may be sitting there behind a filter.
+                        "Nothing called \"${query.trim()}\" matches your filters."
+                    } else {
+                        "Nothing in your library is called \"${query.trim()}\"."
+                    },
+            )
+        }
+
+        filtersActive -> {
+            Empty(
+                title = "No shows match these filters",
+                body = "Clear them, or widen them, to see your library again.",
+            )
+        }
+
+        else -> {
+            Empty(
+                title = "Nothing followed yet",
+                body = "Tap the plus button to find a show.",
+            )
+        }
     }
 }
 

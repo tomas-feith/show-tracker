@@ -20,7 +20,9 @@ import com.showtracker.app.domain.initialWatchedThrough
 import com.showtracker.app.domain.initialWatermark
 import com.showtracker.app.domain.latestAiredSeason
 import com.showtracker.app.domain.refreshShows
+import com.showtracker.app.domain.withDetail
 import com.showtracker.app.network.TmdbClient
+import com.showtracker.app.network.TmdbException
 import com.showtracker.app.notify.BackupSchedule
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -162,12 +164,7 @@ class LibraryViewModel(
                     val outcome = refreshShows(fetcher, library.all(), now, today)
                     library.saveAll(outcome.shows)
                     settings.setLastCheckedAt(now.toString())
-                    // Recorded only on the path that actually wrote shows back, and only
-                    // once every show that could be reached was: a refresh that lost half
-                    // the library to a flaky connection has not filled the new columns in,
-                    // and claiming it had would leave those shows blank until the next time
-                    // the library happened to go stale.
-                    if (outcome.failures.isEmpty()) {
+                    if (!outcome.failures.values.any(::isTransient)) {
                         settings.setBackfilledVersion(BACKFILL_VERSION)
                     }
 
@@ -232,21 +229,16 @@ class LibraryViewModel(
                         )
 
                 library.save(
-                    TrackedShow(
-                        id = detail.id,
-                        name = detail.name,
-                        overview = detail.overview,
-                        posterPath = detail.posterPath,
-                        firstAirDate = detail.firstAirDate,
-                        status = detail.status,
-                        seasons = detail.seasons,
-                        lastEpisode = detail.lastEpisode,
-                        nextEpisode = detail.nextEpisode,
-                        watchedThroughSeason = watched,
-                        knownAiredSeason = announced,
-                        addedAt = now,
-                        lastCheckedAt = now,
-                    ),
+                    // Through withDetail rather than field by field, so a column added to
+                    // ShowDetail cannot reach the refresh and miss this path.
+                    TrackedShow(id = detail.id, name = detail.name)
+                        .withDetail(detail)
+                        .copy(
+                            watchedThroughSeason = watched,
+                            knownAiredSeason = announced,
+                            addedAt = now,
+                            lastCheckedAt = now,
+                        ),
                 )
             }.onFailure { onError(it.message ?: "Could not add that show.") }
         }
@@ -401,6 +393,22 @@ class LibraryViewModel(
         private val STALE_AFTER: Duration = Duration.ofHours(6)
 
         /**
+         * Whether a refresh failure is worth waiting out before calling the backfill done.
+         *
+         * Only connectivity and rate limiting are: they are about the whole library rather
+         * than one show, and the next attempt is likely to succeed. A per-show failure is
+         * not - TMDB does 404 an id that was merged into another, and that show will fail
+         * every time. Treating those as unfinished pinned the app into refetching the
+         * entire library on every foreground resume, for ever, which is the same failure
+         * the recorded version was introduced to prevent.
+         *
+         * The show itself loses nothing by this: `refreshShows` keeps its previous data,
+         * and it is retried on the ordinary six-hourly refresh like everything else.
+         */
+        private fun isTransient(failure: Throwable): Boolean =
+            failure is TmdbException.Offline || failure is TmdbException.RateLimited
+
+        /**
          * The schema version whose columns a refresh is known to fill in.
          *
          * An install carrying anything lower refreshes once on the next open, whatever the
@@ -413,7 +421,7 @@ class LibraryViewModel(
          * one - needs no refetch, and bumping it for that would refresh every library on
          * upgrade for nothing.
          */
-        private const val BACKFILL_VERSION = 5
+        const val BACKFILL_VERSION = 5
 
         fun factory(container: AppContainer): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {

@@ -58,9 +58,12 @@ Built since, beyond the original phases:
   `shows.overview` and the `dismissed` table, 4 added `dismissed.name`, 5 added
   the show metadata TMDB already sends on `/tv/{id}` and the client used to
   discard: `voteAverage`/`voteCount`, `genres`, `episodeRunTime`, `type` and
-  `numberOfEpisodes`. Genres are one pipe-joined column, not a table: nothing
-  queries by genre, and the seasons table exists because a season is a nested
-  object, which a genre name is not. `episodeRunTime` is the only nullable one -
+  `numberOfEpisodes`. Genres are one column joined by **U+001F**, the ASCII unit
+  separator, not a table: nothing queries by genre, and the seasons table exists
+  because a season is a nested object, which a genre name is not. The separator
+  is a control character rather than a pipe or a comma because a printable one
+  is a bet on TMDB never adding a genre name containing it, and losing that bet
+  would silently split one tag into two that do not exist. `episodeRunTime` is the only nullable one -
   TMDB's `episode_run_time` is a legacy field it often leaves empty, so the
   client averages it when present, falls back to the runtime on the last aired
   episode, and stores null when there is neither. A 0 would render as "0m".

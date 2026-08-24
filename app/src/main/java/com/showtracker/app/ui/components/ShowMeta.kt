@@ -59,16 +59,35 @@ internal fun formatScore(voteAverage: Double): String =
  * is nothing for it to distribute over - one episode, or no count at all.
  */
 internal fun describeShape(show: TrackedShow): String? {
-    val count = show.numberOfEpisodes.takeIf { it > 0 }
-    val plural = count != null && count > 1
+    val counted = show.episodeCount()
 
     val parts =
         listOfNotNull(
-            count?.let { if (it == 1) "1 episode" else "$it episodes" },
-            show.episodeRunTime?.let { if (plural) "${it}m each" else "${it}m" },
+            counted?.phrase,
+            show.episodeRunTime?.let { if (counted.isPlural) "${it}m each" else "${it}m" },
         )
     return parts.joinToString(" - ").takeIf { it.isNotEmpty() }
 }
+
+/**
+ * The episode count as a phrase, or null when TMDB has not got one.
+ *
+ * Shared by the visible line and the spoken one, which had grown their own copies of the
+ * same two decisions - when a count exists, and whether it is plural. Two copies of a rule
+ * this small drift quietly, and the failure is the row saying one thing while a screen
+ * reader says another.
+ */
+internal data class EpisodeCount(
+    val value: Int,
+) {
+    val phrase: String get() = if (value == 1) "1 episode" else "$value episodes"
+}
+
+internal fun TrackedShow.episodeCount(): EpisodeCount? =
+    numberOfEpisodes.takeIf { it > 0 }?.let(::EpisodeCount)
+
+/** True only when there is a count and it is more than one, so "each" has work to do. */
+internal val EpisodeCount?.isPlural: Boolean get() = this != null && value > 1
 
 /**
  * The same figures as [describeShape] and the score, said rather than shown.
@@ -81,15 +100,14 @@ internal fun describeShape(show: TrackedShow): String? {
  * Null when TMDB has given neither, so nothing is appended to the row's description.
  */
 internal fun describeMetaAloud(show: TrackedShow): String? {
-    val count = show.numberOfEpisodes.takeIf { it > 0 }
-    val plural = count != null && count > 1
+    val counted = show.episodeCount()
 
     val parts =
         listOfNotNull(
             if (show.voteCount > 0) "Rated ${formatScore(show.voteAverage)} out of 10" else null,
-            count?.let { if (it == 1) "1 episode" else "$it episodes" },
+            counted?.phrase,
             show.episodeRunTime?.let {
-                if (plural) "$it minutes each" else "$it minutes"
+                if (counted.isPlural) "$it minutes each" else "$it minutes"
             },
         )
     return parts.joinToString(", ").takeIf { it.isNotEmpty() }

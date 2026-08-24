@@ -16,7 +16,27 @@ fun mergeShow(
     now: Instant = Instant.now(),
     today: LocalDate = LocalDate.now(),
 ): TrackedShow =
-    existing.copy(
+    existing
+        .withDetail(detail)
+        .copy(
+            knownAiredSeason =
+                latestAiredSeason(detail.seasons, today)?.seasonNumber
+                    ?: existing.knownAiredSeason,
+            lastCheckedAt = now.toString(),
+        )
+
+/**
+ * Everything TMDB owns, copied onto a show. Nothing the user owns is touched.
+ *
+ * The single place the two are separated, used by both paths that hold a [ShowDetail]: the
+ * refresh, and following a show for the first time. They were written out separately until
+ * the metadata columns arrived and only the refresh was updated, so a newly followed show
+ * had no score, no genres and no episode length until it happened to go stale six hours
+ * later - and was excluded by a score or runtime filter for that whole time. A field added
+ * to [ShowDetail] and wired in here now reaches both paths, or neither, which is the point.
+ */
+fun TrackedShow.withDetail(detail: ShowDetail): TrackedShow =
+    copy(
         name = detail.name,
         overview = detail.overview,
         posterPath = detail.posterPath,
@@ -31,9 +51,6 @@ fun mergeShow(
         episodeRunTime = detail.episodeRunTime,
         type = detail.type,
         numberOfEpisodes = detail.numberOfEpisodes,
-        knownAiredSeason =
-            latestAiredSeason(detail.seasons, today)?.seasonNumber ?: existing.knownAiredSeason,
-        lastCheckedAt = now.toString(),
     )
 
 /**
