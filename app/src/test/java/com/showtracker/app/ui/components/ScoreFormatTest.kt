@@ -1,4 +1,4 @@
-package com.showtracker.app.ui.detail
+package com.showtracker.app.ui.components
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

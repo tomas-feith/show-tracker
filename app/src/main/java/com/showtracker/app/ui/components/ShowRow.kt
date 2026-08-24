@@ -201,6 +201,12 @@ fun ShowRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+
+            // Last, under the show's own state, because it is what the row is consulted for
+            // second: the state answers "does this need my attention", and the score and
+            // length answer "do I want to put it on now". It draws nothing at all for a
+            // show TMDB has given neither for, so rows do not gain a blank line each.
+            ShowMeta(show)
         }
 
         // A dot rather than a badge: it marks the rows worth looking at without competing

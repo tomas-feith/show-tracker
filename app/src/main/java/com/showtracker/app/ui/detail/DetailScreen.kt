@@ -18,7 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -49,6 +48,7 @@ import com.showtracker.app.domain.realSeasons
 import com.showtracker.app.domain.seasonInProgress
 import com.showtracker.app.ui.LibraryViewModel
 import com.showtracker.app.ui.components.Poster
+import com.showtracker.app.ui.components.ShowMeta
 import com.showtracker.app.ui.theme.Accent
 import com.showtracker.app.ui.theme.Border
 import com.showtracker.app.ui.theme.Danger
@@ -58,11 +58,7 @@ import com.showtracker.app.ui.theme.Surface
 import com.showtracker.app.ui.theme.SurfaceAlt
 import com.showtracker.app.ui.theme.TextFaint
 import com.showtracker.app.ui.theme.TextMuted
-import java.math.BigDecimal
-import java.math.RoundingMode
-import java.text.NumberFormat
 import java.time.LocalDate
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -137,15 +133,7 @@ fun DetailScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMuted,
                     )
-                    val shape = describeShape(show)
-                    if (shape != null) {
-                        Text(
-                            shape,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextFaint,
-                        )
-                    }
-                    Score(show.voteAverage, show.voteCount)
+                    ShowMeta(show, withVotes = true)
                 }
             }
 
@@ -188,83 +176,6 @@ fun DetailScreen(
             dismissButton = {
                 TextButton(onClick = { confirmingRemove = false }) { Text("Cancel") }
             },
-        )
-    }
-}
-
-/**
- * Episode length and count, as one line, or null when neither is known.
- *
- * Built with [listOfNotNull] rather than a `when` over the two: each half is independently
- * absent - TMDB leaves the runtime empty for a great many recent shows and the count at 0
- * for one it has only just listed - and every combination has to read correctly.
- */
-private fun describeShape(show: TrackedShow): String? {
-    val parts =
-        listOfNotNull(
-            show.episodeRunTime?.let { "${'$'}{it}m episodes" },
-            show.numberOfEpisodes.takeIf { it > 0 }?.let { count ->
-                if (count == 1) "1 episode" else "$count episodes"
-            },
-        )
-    return parts.joinToString(" - ").takeIf { it.isNotEmpty() }
-}
-
-/**
- * One decimal place, rounded the way a reader would round it.
- *
- * [BigDecimal.valueOf] rather than `String.format("%.1f")` or the `BigDecimal(Double)`
- * constructor, both of which round the binary value actually held: 8.45 is stored as
- * 8.4499999999999993, so they render "8.4" where the number everyone else can see ends in
- * a 5. `valueOf` goes through the shortest decimal that round-trips - "8.45" - so the
- * rounding happens on the figure TMDB published rather than on its binary approximation.
- *
- * `toPlainString` also settles the separator without a locale: the phone's locale would
- * otherwise put a comma under text that is hardcoded English everywhere else.
- */
-internal fun formatScore(voteAverage: Double): String =
-    BigDecimal
-        .valueOf(voteAverage)
-        .setScale(1, RoundingMode.HALF_UP)
-        .toPlainString()
-
-/**
- * TMDB's score, shown only once somebody has voted.
- *
- * The vote count is deliberately on screen next to it and not folded into a damped figure
- * the way the recommender's ranking does it: there the number is being compared against
- * other shows and has to be comparable, whereas here it is being read, and a reader judging
- * "8.9" wants to know whether it came from 40,000 people or from 11. A 0 count is drawn as
- * nothing at all rather than as "0.0", which a stored show also holds before its first
- * refresh and which would read as a damning review of a show nobody has rated.
- */
-@Composable
-private fun Score(
-    voteAverage: Double,
-    voteCount: Int,
-) {
-    if (voteCount <= 0) return
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Icon(
-            Icons.Default.Star,
-            contentDescription = null,
-            tint = StateNew,
-            modifier = Modifier.size(14.dp),
-        )
-        Text(
-            formatScore(voteAverage),
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Text(
-            NumberFormat.getIntegerInstance(Locale.US).format(voteCount) + " votes",
-            style = MaterialTheme.typography.bodySmall,
-            color = TextFaint,
         )
     }
 }
