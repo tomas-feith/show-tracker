@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -36,6 +37,7 @@ class Settings(
         val BACKUP_FOLDER = stringPreferencesKey("backup_folder_uri")
         val LAST_BACKUP_AT = stringPreferencesKey("last_backup_at")
         val LAST_BACKUP_ERROR = stringPreferencesKey("last_backup_error")
+        val BACKFILLED_VERSION = intPreferencesKey("backfilled_schema_version")
     }
 
     override val apiKey: Flow<String?> = context.settingsStore.data.map { it[API_KEY] }
@@ -61,6 +63,17 @@ class Settings(
      */
     val lastBackupError: Flow<String?> = context.settingsStore.data.map { it[LAST_BACKUP_ERROR] }
 
+    /**
+     * The schema version whose added columns have been filled in from TMDB, or 0.
+     *
+     * A recorded fact rather than one inferred from the rows. Inferring it - "every show
+     * has a blank synopsis, so the column must be new" - cannot tell an install that has
+     * not refreshed yet from a library where TMDB genuinely has nothing to give, and the
+     * second reads as needing a backfill on every single app open, for ever.
+     */
+    val backfilledVersion: Flow<Int> =
+        context.settingsStore.data.map { it[BACKFILLED_VERSION] ?: 0 }
+
     /** A one-shot read, for a background worker that has no reason to observe. */
     suspend fun currentApiKey(): String? = apiKey.first()
 
@@ -77,6 +90,10 @@ class Settings(
 
     suspend fun setLastCheckedAt(timestamp: String) {
         context.settingsStore.edit { it[LAST_CHECKED_AT] = timestamp }
+    }
+
+    suspend fun setBackfilledVersion(version: Int) {
+        context.settingsStore.edit { it[BACKFILLED_VERSION] = version }
     }
 
     /** A one-shot read, for the backup worker. */

@@ -76,11 +76,17 @@ data class ShowEntity(
 /**
  * What separates genre names in the stored column.
  *
- * A pipe because TMDB's TV genre list is fixed and closed - 16 names, none containing one -
- * so it cannot appear inside a value and split back into a genre that was never there. A
- * comma would have been ambiguous the moment TMDB added a name containing one.
+ * U+001F, the ASCII unit separator, rather than a printable character. A pipe or a comma
+ * only works while no genre name contains one, which is a bet on TMDB's list never
+ * changing - and losing it would be silent, splitting one genre into two that do not
+ * exist. A control character cannot appear in a name TMDB means to display, so the
+ * round trip holds whatever it adds.
+ *
+ * [encodeGenres] strips it anyway. A separator inside a value is the one input this
+ * encoding cannot represent, and dropping it costs a character nothing could render,
+ * whereas keeping it would corrupt the neighbouring tags.
  */
-private const val GENRE_SEPARATOR = "|"
+private const val GENRE_SEPARATOR = "\u001F"
 
 /**
  * `split` on an empty string yields one empty element, not none, so a show with no genres
@@ -90,7 +96,8 @@ private const val GENRE_SEPARATOR = "|"
 internal fun decodeGenres(stored: String): List<String> =
     if (stored.isEmpty()) emptyList() else stored.split(GENRE_SEPARATOR)
 
-internal fun encodeGenres(genres: List<String>): String = genres.joinToString(GENRE_SEPARATOR)
+internal fun encodeGenres(genres: List<String>): String =
+    genres.joinToString(GENRE_SEPARATOR) { it.replace(GENRE_SEPARATOR, "") }
 
 /**
  * The columns of an episode marker, all nullable.

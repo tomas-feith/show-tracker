@@ -148,6 +148,15 @@ class EntityMappingTest {
     }
 
     @Test
+    fun `strips a separator that appears inside a genre name`() {
+        // The one input the joined column cannot represent. TMDB has never sent such a
+        // name - it is a control character - but silently splitting one tag into two that
+        // do not exist is a worse failure than dropping a character nothing can render.
+        val awkward = listOf("Dra\u001Fma", "Comedy")
+        assertEquals(listOf("Drama", "Comedy"), roundTrip(show.copy(genres = awkward)).genres)
+    }
+
+    @Test
     fun `keeps a single genre whole rather than splitting it`() {
         // Every TMDB TV genre containing punctuation - the separator must survive them.
         val awkward = listOf("Action & Adventure", "Sci-Fi & Fantasy", "War & Politics")

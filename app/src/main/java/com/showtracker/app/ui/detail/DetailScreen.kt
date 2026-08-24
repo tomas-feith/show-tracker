@@ -58,6 +58,8 @@ import com.showtracker.app.ui.theme.Surface
 import com.showtracker.app.ui.theme.SurfaceAlt
 import com.showtracker.app.ui.theme.TextFaint
 import com.showtracker.app.ui.theme.TextMuted
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.text.NumberFormat
 import java.time.LocalDate
 import java.util.Locale
@@ -209,6 +211,24 @@ private fun describeShape(show: TrackedShow): String? {
 }
 
 /**
+ * One decimal place, rounded the way a reader would round it.
+ *
+ * [BigDecimal.valueOf] rather than `String.format("%.1f")` or the `BigDecimal(Double)`
+ * constructor, both of which round the binary value actually held: 8.45 is stored as
+ * 8.4499999999999993, so they render "8.4" where the number everyone else can see ends in
+ * a 5. `valueOf` goes through the shortest decimal that round-trips - "8.45" - so the
+ * rounding happens on the figure TMDB published rather than on its binary approximation.
+ *
+ * `toPlainString` also settles the separator without a locale: the phone's locale would
+ * otherwise put a comma under text that is hardcoded English everywhere else.
+ */
+internal fun formatScore(voteAverage: Double): String =
+    BigDecimal
+        .valueOf(voteAverage)
+        .setScale(1, RoundingMode.HALF_UP)
+        .toPlainString()
+
+/**
  * TMDB's score, shown only once somebody has voted.
  *
  * The vote count is deliberately on screen next to it and not folded into a damped figure
@@ -236,9 +256,7 @@ private fun Score(
             modifier = Modifier.size(14.dp),
         )
         Text(
-            // Fixed locale, matching the rest of the app's hardcoded English. The phone's
-            // locale would change the decimal separator under text that never changes.
-            String.format(Locale.US, "%.1f", voteAverage),
+            formatScore(voteAverage),
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onBackground,

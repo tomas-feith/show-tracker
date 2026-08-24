@@ -100,33 +100,11 @@ class LibraryViewModel(
             val last =
                 ready.lastCheckedAt?.let { runCatching { Instant.parse(it) }.getOrNull() }
             val stale = last == null || Duration.between(last, now) > STALE_AFTER
+            val backfilled = settings.backfilledVersion.first()
 
-            if (stale || needsBackfill(ready.shows)) refresh(now)
+            if (stale || backfilled < BACKFILL_VERSION) refresh(now)
         }
     }
-
-    /**
-     * True immediately after an upgrade that added a stored field nothing has filled yet.
-     *
-     * The synopsis column arrived at schema version 3 as `""` for every existing row, and
-     * would otherwise stay blank until the library happened to go stale - up to six hours
-     * of a feature looking broken on a screen the user just updated to get it. Version 5's
-     * genres are the same case, and are checked separately: an install that upgraded
-     * through 3 already has synopses, so testing the synopsis alone would never fire for
-     * the genres.
-     *
-     * Deliberately `all` and not `any`, for each field: TMDB genuinely has no synopsis and
-     * no genres for some shows, so `any` would re-refresh on every single app open, for
-     * ever, on account of one such show. Once one refresh has run, a single show with
-     * genres makes this false and it never fires again.
-     *
-     * The score is not checked. It is 0 both before a refresh and for a show nobody has
-     * voted on, and a library of obscure shows would refresh on every open for good.
-     * Genres cover the same upgrade, so one condition is enough to close both gaps.
-     */
-    private fun needsBackfill(shows: List<TrackedShow>): Boolean =
-        shows.isNotEmpty() &&
-            (shows.all { it.overview.isBlank() } || shows.all { it.genres.isEmpty() })
 
     fun refresh(
         now: Instant = Instant.now(),
@@ -143,6 +121,14 @@ class LibraryViewModel(
                     val outcome = refreshShows(fetcher, library.all(), now, today)
                     library.saveAll(outcome.shows)
                     settings.setLastCheckedAt(now.toString())
+                    // Recorded only on the path that actually wrote shows back, and only
+                    // once every show that could be reached was: a refresh that lost half
+                    // the library to a flaky connection has not filled the new columns in,
+                    // and claiming it had would leave those shows blank until the next time
+                    // the library happened to go stale.
+                    if (outcome.failures.isEmpty()) {
+                        settings.setBackfilledVersion(BACKFILL_VERSION)
+                    }
 
                     if (outcome.failures.isNotEmpty()) {
                         val first = outcome.failures.values.first()
@@ -372,6 +358,21 @@ class LibraryViewModel(
     companion object {
         private const val STOP_TIMEOUT_MS = 5_000L
         private val STALE_AFTER: Duration = Duration.ofHours(6)
+
+        /**
+         * The schema version whose columns a refresh is known to fill in.
+         *
+         * An install carrying anything lower refreshes once on the next open, whatever the
+         * six-hour staleness rule says, so a column added by an upgrade is populated on the
+         * screen the user just updated to see it rather than up to six hours later.
+         *
+         * Bump this whenever a migration adds a column TMDB is the source of. It is
+         * deliberately its own number and not `ShowDatabase.VERSION`: a migration that adds
+         * something the user owns rather than something TMDB sends - `dismissed.name` was
+         * one - needs no refetch, and bumping it for that would refresh every library on
+         * upgrade for nothing.
+         */
+        private const val BACKFILL_VERSION = 5
 
         fun factory(container: AppContainer): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
