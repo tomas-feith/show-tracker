@@ -62,6 +62,32 @@ class RefreshTest {
     }
 
     @Test
+    fun `refreshes the show metadata from TMDB`() {
+        // All six belong to TMDB, not the user, so a refresh overwrites them - a score
+        // moves, and a show that was "Returning Series" with 8 episodes gains more.
+        val merged =
+            mergeShow(
+                show().copy(voteAverage = 7.0, voteCount = 10, genres = listOf("Drama")),
+                detail(seasons = listOf(season(1, "2020-01-01"))).copy(
+                    voteAverage = 8.4,
+                    voteCount = 4321,
+                    genres = listOf("Drama", "Sci-Fi & Fantasy"),
+                    episodeRunTime = 55,
+                    type = "Miniseries",
+                    numberOfEpisodes = 10,
+                ),
+                today = today,
+            )
+
+        assertEquals(8.4, merged.voteAverage, 0.001)
+        assertEquals(4321, merged.voteCount)
+        assertEquals(listOf("Drama", "Sci-Fi & Fantasy"), merged.genres)
+        assertEquals(55, merged.episodeRunTime)
+        assertEquals("Miniseries", merged.type)
+        assertEquals(10, merged.numberOfEpisodes)
+    }
+
+    @Test
     fun `takes fresh metadata from TMDB`() {
         val merged =
             mergeShow(

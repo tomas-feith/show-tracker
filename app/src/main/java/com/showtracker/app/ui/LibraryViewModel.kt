@@ -110,15 +110,23 @@ class LibraryViewModel(
      *
      * The synopsis column arrived at schema version 3 as `""` for every existing row, and
      * would otherwise stay blank until the library happened to go stale - up to six hours
-     * of a feature looking broken on a screen the user just updated to get it.
+     * of a feature looking broken on a screen the user just updated to get it. Version 5's
+     * genres are the same case, and are checked separately: an install that upgraded
+     * through 3 already has synopses, so testing the synopsis alone would never fire for
+     * the genres.
      *
-     * Deliberately `all` and not `any`: TMDB genuinely has no synopsis for some shows, so
-     * `any` would re-refresh on every single app open, for ever, on account of one such
-     * show. Once one refresh has run, any show with a synopsis makes this false and it
-     * never fires again.
+     * Deliberately `all` and not `any`, for each field: TMDB genuinely has no synopsis and
+     * no genres for some shows, so `any` would re-refresh on every single app open, for
+     * ever, on account of one such show. Once one refresh has run, a single show with
+     * genres makes this false and it never fires again.
+     *
+     * The score is not checked. It is 0 both before a refresh and for a show nobody has
+     * voted on, and a library of obscure shows would refresh on every open for good.
+     * Genres cover the same upgrade, so one condition is enough to close both gaps.
      */
     private fun needsBackfill(shows: List<TrackedShow>): Boolean =
-        shows.isNotEmpty() && shows.all { it.overview.isBlank() }
+        shows.isNotEmpty() &&
+            (shows.all { it.overview.isBlank() } || shows.all { it.genres.isEmpty() })
 
     fun refresh(
         now: Instant = Instant.now(),

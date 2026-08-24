@@ -13,9 +13,10 @@ const val EXPORT_FORMAT = "showtracker-export"
 /**
  * The highest payload version this build understands.
  *
- * Still 1 after `inProgressSeason` was added. The version gates breaking changes, and an
- * added optional field is not one: an older reader ignores the key and lands on "nothing in
- * progress", which is the truth it already believed. Bumping it would have made every
+ * Still 1 after `inProgressSeason`, and after the show metadata added with schema version
+ * 5. The version gates breaking changes, and an added optional field is not one: an
+ * older reader ignores the key and lands on the value it already believed - nothing in
+ * progress, and no metadata until the next refresh. Bumping it would have made every
  * existing reader - including the React Native build the cutover still restores from -
  * refuse the file outright.
  */
@@ -79,6 +80,18 @@ internal data class ShowPayload(
     val legacyWatermark: Int? = null,
     val addedAt: String = "",
     val lastCheckedAt: String? = null,
+    /**
+     * Show metadata added alongside schema version 5. Absent from every file written
+     * before it, and from anything the React Native build wrote; the defaults are what a
+     * show whose metadata has not been fetched yet already holds, and the next refresh
+     * fills them in from TMDB rather than the file having to carry them.
+     */
+    val voteAverage: Double = 0.0,
+    val voteCount: Int = 0,
+    val genres: List<String> = emptyList(),
+    val episodeRunTime: Int? = null,
+    val type: String = "",
+    val numberOfEpisodes: Int = 0,
 )
 
 @Serializable
@@ -175,6 +188,12 @@ internal fun ShowPayload.toDomain(): TrackedShow {
         knownAiredSeason = knownAiredSeason ?: legacyWatermark ?: 0,
         addedAt = addedAt,
         lastCheckedAt = lastCheckedAt,
+        voteAverage = voteAverage,
+        voteCount = voteCount,
+        genres = genres,
+        episodeRunTime = episodeRunTime,
+        type = type,
+        numberOfEpisodes = numberOfEpisodes,
     )
 }
 
@@ -210,6 +229,12 @@ internal fun TrackedShow.toPayload(): ShowPayload =
         legacyWatermark = null,
         addedAt = addedAt,
         lastCheckedAt = lastCheckedAt,
+        voteAverage = voteAverage,
+        voteCount = voteCount,
+        genres = genres,
+        episodeRunTime = episodeRunTime,
+        type = type,
+        numberOfEpisodes = numberOfEpisodes,
     )
 
 private fun EpisodeRef.toPayload(): EpisodePayload =

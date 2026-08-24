@@ -46,7 +46,51 @@ data class ShowEntity(
     val knownAiredSeason: Int,
     val addedAt: String,
     val lastCheckedAt: String?,
+    /**
+     * TMDB's score and vote count. Added at schema version 5, 0 for rows that predate it -
+     * the same value a show with no votes carries, and the next refresh fills both in.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val voteAverage: Double,
+    @ColumnInfo(defaultValue = "0")
+    val voteCount: Int,
+    /**
+     * Genre names joined by [GENRE_SEPARATOR] rather than given their own table.
+     *
+     * The seasons table exists because a season is a nested object with fields that can
+     * change shape, and a JSON blob of those would have been unmigratable. A genre is a
+     * bare string, so the argument does not carry over, and nothing queries by genre: the
+     * library screen filters in the domain, on shows already loaded whole. A join table
+     * would be the right answer the day a SQL `WHERE genre = ?` is wanted.
+     */
+    @ColumnInfo(defaultValue = "")
+    val genres: String,
+    /** Minutes, or null where TMDB offered nothing usable. See `ShowDetail.episodeRunTime`. */
+    val episodeRunTime: Int?,
+    @ColumnInfo(defaultValue = "")
+    val type: String,
+    @ColumnInfo(defaultValue = "0")
+    val numberOfEpisodes: Int,
 )
+
+/**
+ * What separates genre names in the stored column.
+ *
+ * A pipe because TMDB's TV genre list is fixed and closed - 16 names, none containing one -
+ * so it cannot appear inside a value and split back into a genre that was never there. A
+ * comma would have been ambiguous the moment TMDB added a name containing one.
+ */
+private const val GENRE_SEPARATOR = "|"
+
+/**
+ * `split` on an empty string yields one empty element, not none, so a show with no genres
+ * would come back holding a single blank tag - which the detail screen would draw as an
+ * empty chip.
+ */
+internal fun decodeGenres(stored: String): List<String> =
+    if (stored.isEmpty()) emptyList() else stored.split(GENRE_SEPARATOR)
+
+internal fun encodeGenres(genres: List<String>): String = genres.joinToString(GENRE_SEPARATOR)
 
 /**
  * The columns of an episode marker, all nullable.
@@ -139,6 +183,12 @@ fun ShowWithSeasons.toDomain(): TrackedShow =
         knownAiredSeason = show.knownAiredSeason,
         addedAt = show.addedAt,
         lastCheckedAt = show.lastCheckedAt,
+        voteAverage = show.voteAverage,
+        voteCount = show.voteCount,
+        genres = decodeGenres(show.genres),
+        episodeRunTime = show.episodeRunTime,
+        type = show.type,
+        numberOfEpisodes = show.numberOfEpisodes,
     )
 
 fun TrackedShow.toEntity(): ShowEntity =
@@ -156,6 +206,12 @@ fun TrackedShow.toEntity(): ShowEntity =
         knownAiredSeason = knownAiredSeason,
         addedAt = addedAt,
         lastCheckedAt = lastCheckedAt,
+        voteAverage = voteAverage,
+        voteCount = voteCount,
+        genres = encodeGenres(genres),
+        episodeRunTime = episodeRunTime,
+        type = type,
+        numberOfEpisodes = numberOfEpisodes,
     )
 
 /**

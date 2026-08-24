@@ -2,6 +2,7 @@ package com.showtracker.app.ui.detail
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -16,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -37,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.showtracker.app.domain.Season
 import com.showtracker.app.domain.TrackedShow
@@ -54,7 +58,9 @@ import com.showtracker.app.ui.theme.Surface
 import com.showtracker.app.ui.theme.SurfaceAlt
 import com.showtracker.app.ui.theme.TextFaint
 import com.showtracker.app.ui.theme.TextMuted
+import java.text.NumberFormat
 import java.time.LocalDate
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -129,8 +135,19 @@ fun DetailScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMuted,
                     )
+                    val shape = describeShape(show)
+                    if (shape != null) {
+                        Text(
+                            shape,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextFaint,
+                        )
+                    }
+                    Score(show.voteAverage, show.voteCount)
                 }
             }
+
+            GenreRow(show.genres)
 
             if (show.overview.isNotBlank()) {
                 Text(
@@ -170,6 +187,100 @@ fun DetailScreen(
                 TextButton(onClick = { confirmingRemove = false }) { Text("Cancel") }
             },
         )
+    }
+}
+
+/**
+ * Episode length and count, as one line, or null when neither is known.
+ *
+ * Built with [listOfNotNull] rather than a `when` over the two: each half is independently
+ * absent - TMDB leaves the runtime empty for a great many recent shows and the count at 0
+ * for one it has only just listed - and every combination has to read correctly.
+ */
+private fun describeShape(show: TrackedShow): String? {
+    val parts =
+        listOfNotNull(
+            show.episodeRunTime?.let { "${'$'}{it}m episodes" },
+            show.numberOfEpisodes.takeIf { it > 0 }?.let { count ->
+                if (count == 1) "1 episode" else "$count episodes"
+            },
+        )
+    return parts.joinToString(" - ").takeIf { it.isNotEmpty() }
+}
+
+/**
+ * TMDB's score, shown only once somebody has voted.
+ *
+ * The vote count is deliberately on screen next to it and not folded into a damped figure
+ * the way the recommender's ranking does it: there the number is being compared against
+ * other shows and has to be comparable, whereas here it is being read, and a reader judging
+ * "8.9" wants to know whether it came from 40,000 people or from 11. A 0 count is drawn as
+ * nothing at all rather than as "0.0", which a stored show also holds before its first
+ * refresh and which would read as a damning review of a show nobody has rated.
+ */
+@Composable
+private fun Score(
+    voteAverage: Double,
+    voteCount: Int,
+) {
+    if (voteCount <= 0) return
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            Icons.Default.Star,
+            contentDescription = null,
+            tint = StateNew,
+            modifier = Modifier.size(14.dp),
+        )
+        Text(
+            // Fixed locale, matching the rest of the app's hardcoded English. The phone's
+            // locale would change the decimal separator under text that never changes.
+            String.format(Locale.US, "%.1f", voteAverage),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Text(
+            NumberFormat.getIntegerInstance(Locale.US).format(voteCount) + " votes",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextFaint,
+        )
+    }
+}
+
+/**
+ * Genre tags.
+ *
+ * Scrolled sideways rather than wrapped: a wrap would change the height of the header for
+ * some shows and not others, so the synopsis below it would sit at a different place on
+ * every screen. Three or four tags is the normal case and fits without scrolling at all.
+ */
+@Composable
+private fun GenreRow(genres: List<String>) {
+    if (genres.isEmpty()) return
+
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        genres.forEach { genre ->
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(SurfaceAlt)
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    genre,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontSize = 12.sp,
+                    color = TextMuted,
+                )
+            }
+        }
     }
 }
 

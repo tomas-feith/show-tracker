@@ -146,6 +146,53 @@ class MigrationTest {
         }
     }
 
+    /**
+     * Adding the metadata columns must leave progress alone, and must leave every existing
+     * row holding "not fetched yet" rather than a value it never had.
+     *
+     * This is the migration the live library takes on the next install, so what it asserts
+     * first is the column that exists nowhere else: `watchedThroughSeason`, unchanged.
+     */
+    @Test
+    @Throws(IOException::class)
+    fun addingShowMetadataKeepsExistingProgress() {
+        helper.createDatabase(TEST_DB, 4).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO shows
+                    (id, name, overview, posterPath, firstAirDate, status,
+                     watchedThroughSeason, inProgressSeason, knownAiredSeason,
+                     addedAt, lastCheckedAt)
+                VALUES (1, 'Shōgun', 'An overview.', NULL, '2024-02-27', 'Returning Series',
+                        3, 4, 4, '2026-01-05T10:00:00.000Z', NULL)
+                """.trimIndent(),
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 5, true, *MIGRATIONS)
+
+        val query =
+            "SELECT watchedThroughSeason, inProgressSeason, knownAiredSeason, overview, " +
+                "voteAverage, voteCount, genres, episodeRunTime, type, numberOfEpisodes " +
+                "FROM shows WHERE id = 1"
+
+        db.query(query).use { cursor ->
+            assertTrue("the row did not survive the migration", cursor.moveToFirst())
+            assertEquals("watch progress was disturbed", 3, cursor.getInt(0))
+            assertEquals("the in-progress marker was disturbed", 4, cursor.getInt(1))
+            assertEquals(4, cursor.getInt(2))
+            assertEquals("the synopsis was disturbed", "An overview.", cursor.getString(3))
+
+            assertEquals("a score nobody voted on is 0", 0.0, cursor.getDouble(4), 0.001)
+            assertEquals(0, cursor.getInt(5))
+            assertEquals("", cursor.getString(6))
+            // Null, not 0: an unknown episode length must not read as a zero-minute one.
+            assertTrue("episodeRunTime should arrive null", cursor.isNull(7))
+            assertEquals("", cursor.getString(8))
+            assertEquals(0, cursor.getInt(9))
+        }
+    }
+
     @Test
     @Throws(IOException::class)
     fun currentSchemaOpensCleanly() {

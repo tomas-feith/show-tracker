@@ -119,6 +119,49 @@ class EntityMappingTest {
     }
 
     @Test
+    fun `carries the show metadata across the entity boundary`() {
+        val rich =
+            show.copy(
+                voteAverage = 8.4,
+                voteCount = 4321,
+                genres = listOf("Drama", "Action & Adventure"),
+                episodeRunTime = 55,
+                type = "Miniseries",
+                numberOfEpisodes = 10,
+            )
+        val result = roundTrip(rich)
+
+        assertEquals(8.4, result.voteAverage, 0.001)
+        assertEquals(4321, result.voteCount)
+        assertEquals(listOf("Drama", "Action & Adventure"), result.genres)
+        assertEquals(55, result.episodeRunTime)
+        assertEquals("Miniseries", result.type)
+        assertEquals(10, result.numberOfEpisodes)
+    }
+
+    @Test
+    fun `reads no genres back from an empty genre column`() {
+        // `split` on "" yields one empty element rather than none, so without the guard a
+        // show with no genres comes back holding a single blank tag.
+        assertEquals("", show.copy(genres = emptyList()).toEntity().genres)
+        assertEquals(emptyList<String>(), roundTrip(show.copy(genres = emptyList())).genres)
+    }
+
+    @Test
+    fun `keeps a single genre whole rather than splitting it`() {
+        // Every TMDB TV genre containing punctuation - the separator must survive them.
+        val awkward = listOf("Action & Adventure", "Sci-Fi & Fantasy", "War & Politics")
+        assertEquals(awkward, roundTrip(show.copy(genres = awkward)).genres)
+    }
+
+    @Test
+    fun `keeps an unknown episode length null rather than storing a zero`() {
+        // 0 would render as "0m episodes", which is a claim; null renders as nothing.
+        assertNull(roundTrip(show.copy(episodeRunTime = null)).episodeRunTime)
+        assertEquals(42, roundTrip(show.copy(episodeRunTime = 42)).episodeRunTime)
+    }
+
+    @Test
     fun `maps an empty season list to no rows at all`() {
         val empty = show.copy(seasons = emptyList())
         assertEquals(emptyList<SeasonEntity>(), empty.toSeasonEntities())

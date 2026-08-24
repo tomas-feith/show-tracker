@@ -25,6 +25,12 @@ fun mergeShow(
         seasons = detail.seasons,
         lastEpisode = detail.lastEpisode,
         nextEpisode = detail.nextEpisode,
+        voteAverage = detail.voteAverage,
+        voteCount = detail.voteCount,
+        genres = detail.genres,
+        episodeRunTime = detail.episodeRunTime,
+        type = detail.type,
+        numberOfEpisodes = detail.numberOfEpisodes,
         knownAiredSeason =
             latestAiredSeason(detail.seasons, today)?.seasonNumber ?: existing.knownAiredSeason,
         lastCheckedAt = now.toString(),

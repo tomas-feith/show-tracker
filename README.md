@@ -143,8 +143,10 @@ seconds.
 
 `format` and `version` are stamped so the importer refuses a file it does not
 understand rather than half-loading it. `version` gates breaking changes only: a
-later writer's added field, such as `inProgressSeason`, is ignored by an older
-reader rather than refused, so files still move in both directions.
+later writer's added field - `inProgressSeason`, or the show metadata added with
+schema version 5 - is ignored by an older reader rather than refused, so files
+still move in both directions. Anything a reader skips is refetched from TMDB on
+the next refresh, so a file from an older writer costs nothing but a round trip.
 
 This app both reads and writes that format, from Settings, then **Your data**.
 Import replaces the whole library and asks first. Export is how a backup leaves

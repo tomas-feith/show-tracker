@@ -59,6 +59,12 @@ class TmdbClientTest {
             "season_number": 1, "episode_number": 10, "name": "Finale", "air_date": "2024-04-23"
           },
           "next_episode_to_air": null,
+          "vote_average": 8.442,
+          "vote_count": 4321,
+          "genres": [{"id": 18, "name": "Drama"}, {"id": 10759, "name": "Action & Adventure"}],
+          "episode_run_time": [55],
+          "type": "Miniseries",
+          "number_of_episodes": 10,
           "an_unknown_field": 1
         }
         """.trimIndent()
@@ -78,6 +84,92 @@ class TmdbClientTest {
             assertEquals(10, show.seasons[1].episodeCount)
             assertEquals(10, show.lastEpisode?.episodeNumber)
             assertNull(show.nextEpisode)
+        }
+
+    @Test
+    fun `maps the show metadata onto the domain type`() =
+        runTest {
+            enqueue(detailJson)
+            val show = client.fetchShow(v3Key, 1396)
+
+            assertEquals(8.442, show.voteAverage, 0.001)
+            assertEquals(4321, show.voteCount)
+            assertEquals(listOf("Drama", "Action & Adventure"), show.genres)
+            assertEquals(55, show.episodeRunTime)
+            assertEquals("Miniseries", show.type)
+            assertEquals(10, show.numberOfEpisodes)
+        }
+
+    @Test
+    fun `defaults the metadata when TMDB omits it entirely`() =
+        runTest {
+            // Every one of these is absent from some real payload, and an older cached
+            // response has none of them. A missing field must not fail the whole fetch.
+            enqueue("""{"id":1,"name":"Bare"}""")
+            val show = client.fetchShow(v3Key, 1)
+
+            assertEquals(0.0, show.voteAverage, 0.001)
+            assertEquals(0, show.voteCount)
+            assertEquals(emptyList<String>(), show.genres)
+            assertNull(show.episodeRunTime)
+            assertEquals("", show.type)
+            assertEquals(0, show.numberOfEpisodes)
+        }
+
+    @Test
+    fun `averages a runtime list from a show that changed format`() =
+        runTest {
+            enqueue("""{"id":1,"name":"X","episode_run_time":[30,60]}""")
+            assertEquals(45, client.fetchShow(v3Key, 1).episodeRunTime)
+        }
+
+    @Test
+    fun `ignores a zero runtime rather than averaging it in`() =
+        runTest {
+            // TMDB writes 0 for unknown. Averaging it with a real value would halve the
+            // answer and put a wrong number on screen, which is worse than showing none.
+            enqueue("""{"id":1,"name":"X","episode_run_time":[0,50]}""")
+            assertEquals(50, client.fetchShow(v3Key, 1).episodeRunTime)
+        }
+
+    @Test
+    fun `falls back to the last aired episode when the runtime list is empty`() =
+        runTest {
+            // The common case for a recent show: TMDB no longer fills episode_run_time in,
+            // and the only runtime in the response is on the last episode.
+            enqueue(
+                """
+                {"id":1,"name":"X","episode_run_time":[],
+                 "last_episode_to_air":{"season_number":1,"episode_number":8,
+                                        "name":"Finale","air_date":"2025-01-01","runtime":62}}
+                """.trimIndent(),
+            )
+            assertEquals(62, client.fetchShow(v3Key, 1).episodeRunTime)
+        }
+
+    @Test
+    fun `leaves the runtime null when neither source has one`() =
+        runTest {
+            enqueue(
+                """
+                {"id":1,"name":"X","episode_run_time":[],
+                 "last_episode_to_air":{"season_number":1,"episode_number":8,"name":"F"}}
+                """.trimIndent(),
+            )
+            // Null rather than 0: "0m episodes" is a claim, and an unknown length is not.
+            assertNull(client.fetchShow(v3Key, 1).episodeRunTime)
+        }
+
+    @Test
+    fun `drops a genre TMDB names with a blank string`() =
+        runTest {
+            enqueue(
+                """
+                {"id":1,"name":"X","genres":[{"id":18,"name":""},{"id":1,"name":"Drama"}]}
+                """.trimIndent(),
+            )
+            // A nameless genre would draw as an empty chip on the detail screen.
+            assertEquals(listOf("Drama"), client.fetchShow(v3Key, 1).genres)
         }
 
     @Test

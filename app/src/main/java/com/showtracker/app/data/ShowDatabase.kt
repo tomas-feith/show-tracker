@@ -16,7 +16,7 @@ abstract class ShowDatabase : RoomDatabase() {
     abstract fun showDao(): ShowDao
 
     companion object {
-        const val VERSION = 4
+        const val VERSION = 5
 
         const val NAME = "shows.db"
 
@@ -74,6 +74,33 @@ abstract class ShowDatabase : RoomDatabase() {
             }
 
         /**
+         * Adds the show metadata columns: score, genres, episode length, type, episode count.
+         *
+         * All six arrive as the "not known yet" value rather than as nulls the domain would
+         * have to keep re-deciding about - 0, '' and, for the runtime alone, NULL, because
+         * a 0-minute episode is a claim and an absent runtime is not. `LibraryViewModel`
+         * refetches them on the first open after the upgrade, so the blanks close
+         * themselves; nothing here is data that was lost.
+         *
+         * Six `ADD COLUMN`s rather than a table rebuild: every one of them is additive, and
+         * a rebuild would put `watchedThroughSeason` - the one column that exists nowhere
+         * else - through a copy it does not need to take.
+         */
+        private val MIGRATION_4_5 =
+            object : Migration(4, 5) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    listOf(
+                        "voteAverage REAL NOT NULL DEFAULT 0",
+                        "voteCount INTEGER NOT NULL DEFAULT 0",
+                        "genres TEXT NOT NULL DEFAULT ''",
+                        "episodeRunTime INTEGER",
+                        "type TEXT NOT NULL DEFAULT ''",
+                        "numberOfEpisodes INTEGER NOT NULL DEFAULT 0",
+                    ).forEach { db.execSQL("ALTER TABLE shows ADD COLUMN $it") }
+                }
+            }
+
+        /**
          * Schema migrations, oldest first.
          *
          * Destructive fallback is deliberately never enabled. Most of what this database
@@ -91,7 +118,7 @@ abstract class ShowDatabase : RoomDatabase() {
          */
 
         val MIGRATIONS: List<Migration> =
-            listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 
         @Volatile
         private var instance: ShowDatabase? = null

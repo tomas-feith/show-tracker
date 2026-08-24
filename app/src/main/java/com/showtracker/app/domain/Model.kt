@@ -55,6 +55,24 @@ data class ShowDetail(
     val seasons: List<Season>,
     val lastEpisode: EpisodeRef?,
     val nextEpisode: EpisodeRef?,
+    /** TMDB's user score out of 10, and how many votes stand behind it. */
+    val voteAverage: Double = 0.0,
+    val voteCount: Int = 0,
+    /** Genre names as TMDB labels them, in TMDB's order. Empty where it lists none. */
+    val genres: List<String> = emptyList(),
+    /**
+     * Typical episode length in minutes, or null when it cannot be established.
+     *
+     * Null is a real answer here and not a zero: TMDB's `episode_run_time` is a legacy
+     * field it no longer fills in reliably, so for many recent shows the only runtime in
+     * the payload is the one on the last aired episode - and for some there is neither.
+     * A 0 would render as "0m", which claims something false.
+     */
+    val episodeRunTime: Int? = null,
+    /** TMDB's shape-of-show label: "Scripted", "Miniseries", "Reality", and so on. */
+    val type: String = "",
+    /** Episodes across every season TMDB knows about, including unaired ones. */
+    val numberOfEpisodes: Int = 0,
 )
 
 /**
@@ -132,6 +150,21 @@ data class TrackedShow(
     val addedAt: String = "",
     /** ISO timestamp, null until the first refresh completes. */
     val lastCheckedAt: String? = null,
+    /**
+     * TMDB's user score out of 10, and its vote count. Both 0 before the first refresh
+     * that carries them, which is what a show nobody has voted on also looks like - the
+     * count is what tells the two apart, and the UI shows no score at all when it is 0.
+     */
+    val voteAverage: Double = 0.0,
+    val voteCount: Int = 0,
+    /** Genre names as TMDB labels them. Empty where TMDB lists none, or before a refresh. */
+    val genres: List<String> = emptyList(),
+    /** Typical episode length in minutes; null when TMDB gives nothing usable. */
+    val episodeRunTime: Int? = null,
+    /** TMDB's shape-of-show label, e.g. "Scripted" or "Miniseries". */
+    val type: String = "",
+    /** Episodes across every season, aired or not. */
+    val numberOfEpisodes: Int = 0,
 )
 
 /**

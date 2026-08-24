@@ -21,6 +21,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 private const val BASE = "https://api.themoviedb.org/3"
 private const val IMAGE_BASE = "https://image.tmdb.org/t/p"
@@ -315,7 +316,34 @@ private data class DetailResponse(
     val seasons: List<RawSeason> = emptyList(),
     @SerialName("last_episode_to_air") val lastEpisode: RawEpisode? = null,
     @SerialName("next_episode_to_air") val nextEpisode: RawEpisode? = null,
+    @SerialName("vote_average") val voteAverage: Double = 0.0,
+    @SerialName("vote_count") val voteCount: Int = 0,
+    val genres: List<RawGenre> = emptyList(),
+    /**
+     * TMDB's legacy per-show runtime list. Usually one entry, occasionally several for a
+     * show that changed format, and empty for a great many recent ones - see
+     * [episodeRunTimeMinutes].
+     */
+    @SerialName("episode_run_time") val episodeRunTime: List<Int> = emptyList(),
+    val type: String = "",
+    @SerialName("number_of_episodes") val numberOfEpisodes: Int = 0,
 ) {
+    /**
+     * A typical episode length, or null when the payload supports no honest answer.
+     *
+     * `episode_run_time` first, averaged because a show that changed format lists each
+     * length it has had and neither one alone is representative. When TMDB has left it
+     * empty - which it increasingly does - the runtime on the last aired episode is the
+     * only other figure in this response, and one real episode beats nothing. Zeroes are
+     * dropped rather than averaged in: TMDB uses 0 for unknown, and including it would
+     * quietly halve the answer.
+     */
+    private fun episodeRunTimeMinutes(): Int? {
+        val declared = episodeRunTime.filter { it > 0 }
+        if (declared.isNotEmpty()) return declared.average().roundToInt()
+        return lastEpisode?.runtime?.takeIf { it > 0 }
+    }
+
     fun toDomain(): ShowDetail =
         ShowDetail(
             id = id,
@@ -327,8 +355,21 @@ private data class DetailResponse(
             seasons = seasons.map { it.toDomain() },
             lastEpisode = lastEpisode?.toDomain(),
             nextEpisode = nextEpisode?.toDomain(),
+            voteAverage = voteAverage,
+            voteCount = voteCount,
+            // Blank names dropped: a genre that cannot be named is not a tag anyone can
+            // read, and it would render as an empty chip.
+            genres = genres.mapNotNull { it.name.takeIf(String::isNotBlank) },
+            episodeRunTime = episodeRunTimeMinutes(),
+            type = type,
+            numberOfEpisodes = numberOfEpisodes,
         )
 }
+
+@Serializable
+private data class RawGenre(
+    val name: String = "",
+)
 
 @Serializable
 private data class RawSeason(
@@ -346,6 +387,12 @@ private data class RawEpisode(
     @SerialName("episode_number") val episodeNumber: Int,
     val name: String = "",
     @SerialName("air_date") val airDate: String? = null,
+    /**
+     * Read only as the fallback in [DetailResponse.episodeRunTimeMinutes], and deliberately
+     * not carried into [EpisodeRef]: one episode's length is not a property of the marker,
+     * and putting it there would add a column to the stored show for both markers.
+     */
+    val runtime: Int? = null,
 ) {
     fun toDomain(): EpisodeRef = EpisodeRef(seasonNumber, episodeNumber, name, cleanDate(airDate))
 }

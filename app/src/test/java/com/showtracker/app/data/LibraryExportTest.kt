@@ -38,6 +38,12 @@ class LibraryExportTest {
                 knownAiredSeason = 1,
                 addedAt = "2026-01-05T10:00:00Z",
                 lastCheckedAt = "2026-08-14T09:30:00Z",
+                voteAverage = 8.4,
+                voteCount = 4321,
+                genres = listOf("Drama", "Action & Adventure"),
+                episodeRunTime = 55,
+                type = "Miniseries",
+                numberOfEpisodes = 10,
             ),
             TrackedShow(
                 id = 2,
@@ -106,8 +112,61 @@ class LibraryExportTest {
     }
 
     @Test
+    fun `round trips the show metadata`() {
+        val restored = parseExport(buildExport(shows, null, now)) as ImportResult.Success
+        val shogun = restored.shows.single { it.id == 1 }
+
+        assertEquals(8.4, shogun.voteAverage, 0.001)
+        assertEquals(4321, shogun.voteCount)
+        assertEquals(listOf("Drama", "Action & Adventure"), shogun.genres)
+        assertEquals(55, shogun.episodeRunTime)
+        assertEquals("Miniseries", shogun.type)
+        assertEquals(10, shogun.numberOfEpisodes)
+    }
+
+    @Test
+    fun `reads a file written before the metadata existed`() {
+        // Every export the React Native build wrote, and every one this app wrote before
+        // schema version 5. The defaults have to be the "not fetched yet" values, which the
+        // next refresh fills in - not a failure to import.
+        val older =
+            """
+            {
+              "format": "$EXPORT_FORMAT",
+              "version": 1,
+              "shows": [
+                {"id": 1, "name": "Shōgun", "watchedThroughSeason": 2, "knownAiredSeason": 2}
+              ]
+            }
+            """.trimIndent()
+
+        val restored = parseExport(older) as ImportResult.Success
+        val shogun = restored.shows.single()
+
+        assertEquals(
+            "the user's progress is what an old file is imported for",
+            2,
+            shogun.watchedThroughSeason,
+        )
+        assertEquals(0.0, shogun.voteAverage, 0.001)
+        assertEquals(0, shogun.voteCount)
+        assertEquals(emptyList<String>(), shogun.genres)
+        assertNull(shogun.episodeRunTime)
+        assertEquals("", shogun.type)
+        assertEquals(0, shogun.numberOfEpisodes)
+    }
+
+    @Test
+    fun `omits an absent episode length rather than writing a null`() {
+        // explicitNulls is off, and only one of the two sample shows has a runtime.
+        val text = buildExport(shows, null, now)
+        assertEquals(1, Regex("episodeRunTime").findAll(text).count())
+    }
+
+    @Test
     fun `stays on format version 1 so an older reader still accepts the file`() {
-        // inProgressSeason is an added optional field, not a breaking change. A bump here
+        // inProgressSeason and the metadata fields are added optional fields, not breaking
+        // changes. A bump here
         // would make every existing reader - the React Native build included - refuse a
         // file it could otherwise read.
         assertEquals(1, EXPORT_VERSION)
