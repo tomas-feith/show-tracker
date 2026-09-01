@@ -10,7 +10,7 @@ coreKtx = "1.19.0"
 lifecycle = "2.11.0"
 activityCompose = "1.13.0"
 composeBom = "2026.08.00"
-navigation = "2.9.8"
+navigation = "2.10.0"
 room = "2.8.4"
 # Aligned with the version androidx already resolves on the classpath, rather than pushed
 # ahead of it. Dependabot raises both together.
