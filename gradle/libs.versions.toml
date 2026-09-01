@@ -15,7 +15,7 @@ room = "2.8.4"
 # Aligned with the version androidx already resolves on the classpath, rather than pushed
 # ahead of it. Dependabot raises both together.
 coroutines = "1.9.0"
-okhttp = "4.12.0"
+okhttp = "5.5.0"
 # 1.3.0 is still alpha, so the metadata <latest> tag is not a stable version.
 datastore = "1.2.1"
 coil = "3.2.0"
