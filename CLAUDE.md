@@ -68,9 +68,16 @@ Built since, beyond the original phases:
   client averages it when present, falls back to the runtime on the last aired
   episode, and stores null when there is neither. A 0 would render as "0m".
   6 added `shows.favourite`, the user's star. It is the third column TMDB is not
-  the source of - with `watchedThroughSeason` and `inProgressSeason` - so a
-  refresh must never write it, the export carries it (nothing could refetch it),
-  and `BACKFILL_VERSION` was deliberately *not* bumped for it.
+  the source of - with `watchedThroughSeason` and `inProgressSeason` - so the
+  export carries it (nothing could refetch it), and `BACKFILL_VERSION` was
+  deliberately *not* bumped for it.
+- **A refresh writes only the columns TMDB owns** (`RefreshedShow`, a Room
+  partial update). It reads the library, spends seconds in TMDB, then writes
+  back - so a whole-row upsert silently reverted anything the user did in
+  between: a star tapped mid-refresh came back off, a season marked watched came
+  back unwatched, and a show removed mid-refresh was resurrected. The statement
+  now names TMDB's columns plus `knownAiredSeason` and `lastCheckedAt`, which
+  belong to the refresh itself, and updates 0 rows for a show that has gone.
 - **Favourites.** A star on the show screen, a marker on the library row, a
   "Starred only" chip in the filter sheet, and the seed set behind the
   "Favourites" discovery tab. A flag on `shows` rather than its own table,

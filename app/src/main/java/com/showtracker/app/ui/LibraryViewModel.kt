@@ -162,7 +162,7 @@ class LibraryViewModel(
             try {
                 catchingUserFacing {
                     val outcome = refreshShows(fetcher, library.all(), now, today)
-                    library.saveAll(outcome.shows)
+                    library.saveRefreshed(outcome.shows)
                     settings.setLastCheckedAt(now.toString())
                     if (!outcome.failures.values.any(::isTransient)) {
                         settings.setBackfilledVersion(BACKFILL_VERSION)

@@ -55,8 +55,16 @@ class LibraryRepository(
         dao.saveShow(show.toEntity(), show.toSeasonEntities())
     }
 
-    suspend fun saveAll(shows: List<TrackedShow>) {
-        shows.forEach { save(it) }
+    /**
+     * Write back a whole refresh.
+     *
+     * Deliberately not [save] in a loop. A refresh must not write the columns the user
+     * owns - it has been holding a copy of them since before the network call - and it
+     * must not recreate a show removed while it ran; [ShowDao.saveRefreshed] enforces
+     * both.
+     */
+    suspend fun saveRefreshed(shows: List<TrackedShow>) {
+        shows.forEach { dao.saveRefreshed(it.toRefreshed(), it.toSeasonEntities()) }
     }
 
     suspend fun remove(id: Int) {

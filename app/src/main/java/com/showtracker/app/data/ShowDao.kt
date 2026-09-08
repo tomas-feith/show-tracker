@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
@@ -36,6 +37,10 @@ interface ShowDao {
 
     @Query("DELETE FROM seasons WHERE showId = :showId")
     suspend fun deleteSeasonsFor(showId: Int)
+
+    /** How many seasons a show has stored. Read by tests asserting the cascade holds. */
+    @Query("SELECT COUNT(*) FROM seasons WHERE showId = :showId")
+    suspend fun seasonCountFor(showId: Int): Int
 
     @Query("DELETE FROM shows WHERE id = :id")
     suspend fun deleteShow(id: Int)
@@ -134,6 +139,34 @@ interface ShowDao {
         seasons: List<SeasonEntity>,
     ) {
         upsertShow(show)
+        deleteSeasonsFor(show.id)
+        insertSeasons(seasons)
+    }
+
+    /**
+     * Write back what a refresh learned, touching nothing the user owns.
+     *
+     * A partial update rather than an upsert of the whole row; see [RefreshedShow] for why
+     * that distinction is the point. Returns the number of rows changed, which is 0 for a
+     * show that is no longer there.
+     */
+    @Update(entity = ShowEntity::class)
+    suspend fun updateRefreshed(show: RefreshedShow): Int
+
+    /**
+     * Apply one show's refresh: its TMDB columns, then its season list.
+     *
+     * Nothing is written when the update matched no row. A refresh holds a list read
+     * several seconds ago, so a show the user removed in the meantime is still in it, and
+     * an upsert would put it back - resurrecting a show that was deliberately dropped, and
+     * with it a foreign key for seasons whose parent no longer exists.
+     */
+    @Transaction
+    suspend fun saveRefreshed(
+        show: RefreshedShow,
+        seasons: List<SeasonEntity>,
+    ) {
+        if (updateRefreshed(show) == 0) return
         deleteSeasonsFor(show.id)
         insertSeasons(seasons)
     }

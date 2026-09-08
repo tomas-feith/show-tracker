@@ -45,7 +45,7 @@ class RefreshWorker(
             val outcome =
                 refreshShows(fetcher, shows, Instant.now(), LocalDate.now())
 
-            container.library.saveAll(outcome.shows)
+            container.library.saveRefreshed(outcome.shows)
             container.settings.setLastCheckedAt(Instant.now().toString())
             // This refresh fills the columns an upgrade added just as the in-app one does,
             // so it records the same marker. Without it a background refresh was followed

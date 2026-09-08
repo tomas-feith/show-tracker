@@ -84,6 +84,62 @@ data class ShowEntity(
 )
 
 /**
+ * The columns a refresh may write, and no others.
+ *
+ * A refresh reads the library, spends seconds in TMDB, and writes back what it merged. If
+ * it writes whole rows, everything the user did in those seconds is overwritten by the
+ * snapshot it started from: a star tapped mid-refresh comes back off, a season marked
+ * watched comes back unwatched. Room's partial update takes this instead, so the SQL names
+ * only the columns TMDB is the source of and the user's three - `watchedThroughSeason`,
+ * `inProgressSeason`, `favourite` - are not in the statement at all.
+ *
+ * `knownAiredSeason` and `lastCheckedAt` are here because they belong to the refresh
+ * itself: they record what it saw and when. `addedAt` is not, because nothing after the
+ * first save has any business changing it.
+ *
+ * Every field must exist on [ShowEntity] with the same name and type, and the primary key
+ * has to be present for Room to find the row.
+ */
+data class RefreshedShow(
+    val id: Int,
+    val name: String,
+    val overview: String,
+    val posterPath: String?,
+    val firstAirDate: String?,
+    val status: String,
+    @Embedded(prefix = "last_") val lastEpisode: EpisodeColumns,
+    @Embedded(prefix = "next_") val nextEpisode: EpisodeColumns,
+    val knownAiredSeason: Int,
+    val lastCheckedAt: String?,
+    val voteAverage: Double,
+    val voteCount: Int,
+    val genres: String,
+    val episodeRunTime: Int?,
+    val type: String,
+    val numberOfEpisodes: Int,
+)
+
+fun TrackedShow.toRefreshed(): RefreshedShow =
+    RefreshedShow(
+        id = id,
+        name = name,
+        overview = overview,
+        posterPath = posterPath,
+        firstAirDate = firstAirDate,
+        status = status,
+        lastEpisode = lastEpisode.toColumns(),
+        nextEpisode = nextEpisode.toColumns(),
+        knownAiredSeason = knownAiredSeason,
+        lastCheckedAt = lastCheckedAt,
+        voteAverage = voteAverage,
+        voteCount = voteCount,
+        genres = encodeGenres(genres),
+        episodeRunTime = episodeRunTime,
+        type = type,
+        numberOfEpisodes = numberOfEpisodes,
+    )
+
+/**
  * What separates genre names in the stored column.
  *
  * U+001F, the ASCII unit separator, rather than a printable character. A pipe or a comma
