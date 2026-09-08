@@ -32,6 +32,7 @@ class EntityMappingTest {
             knownAiredSeason = 1,
             addedAt = "2026-01-05T10:00:00.000Z",
             lastCheckedAt = "2026-08-14T09:30:00.000Z",
+            favourite = true,
         )
 
     private fun roundTrip(source: TrackedShow): TrackedShow =

@@ -93,6 +93,20 @@ class LibraryRepository(
     }
 
     /**
+     * Star or unstar a show.
+     *
+     * A single-column update rather than a re-save; see [ShowDao.setFavourite]. Nothing
+     * here clamps or corrects the value, because unlike the two watermarks there is no
+     * state a star can contradict.
+     */
+    suspend fun setFavourite(
+        id: Int,
+        favourite: Boolean,
+    ) {
+        dao.setFavourite(id, favourite)
+    }
+
+    /**
      * Replace the whole library with an imported one.
      *
      * Replace rather than merge: an import is a restore, and merging would have to invent

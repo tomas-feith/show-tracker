@@ -73,7 +73,8 @@ class DiscoverViewModelTest {
     private fun show(
         id: Int,
         name: String = "Show $id",
-    ) = TrackedShow(id = id, name = name, addedAt = "2026-01-0$id")
+        favourite: Boolean = false,
+    ) = TrackedShow(id = id, name = name, addedAt = "2026-01-0$id", favourite = favourite)
 
     private fun recommendations(vararg ids: Int): String =
         ids.joinToString(
@@ -234,7 +235,7 @@ class DiscoverViewModelTest {
             assertTrue(model.state.value.moreSuggestions)
 
             val requestsBefore = server.requestCount
-            model.refreshForYou()
+            model.refresh(DiscoverTab.FOR_YOU)
             advanceUntilIdle()
 
             val secondPage =
@@ -257,12 +258,89 @@ class DiscoverViewModelTest {
 
             val requestsBefore = server.requestCount
             server.enqueue(MockResponse().setBody(recommendations(20, 21)))
-            model.refreshForYou()
+            model.refresh(DiscoverTab.FOR_YOU)
             advanceUntilIdle()
 
             assertEquals(requestsBefore + 1, server.requestCount)
             assertEquals(
                 listOf(20, 21),
+                model.state.value.forYou.items
+                    .map { it.show.id },
+            )
+        }
+
+    @Test
+    fun `the favourites tab is seeded by the starred shows alone`() =
+        runTest(dispatcher) {
+            // One response, because only the starred show may be asked about. A second
+            // request would consume nothing and the assertion on the count would catch it.
+            server.enqueue(MockResponse().setBody(recommendations(10, 11)))
+
+            val library =
+                FakeLibrary(listOf(show(1), show(2, favourite = true), show(3)))
+            val model = viewModel(library)
+            model.load(DiscoverTab.FAVOURITES)
+            advanceUntilIdle()
+
+            val tab = model.state.value.favourites
+            assertNull(tab.error)
+            assertTrue(tab.loaded)
+            assertEquals(listOf(10, 11), tab.items.map { it.show.id })
+            assertEquals("one seed, one request", 1, server.requestCount)
+            // "Because you follow Show 2" - the reason must name the starred show, since
+            // that is the whole claim the tab makes.
+            assertEquals(listOf("Show 2"), tab.items.first().becauseOf)
+
+            // And the tab it is not is untouched: the two hold separate pools.
+            assertTrue(
+                model.state.value.forYou.items
+                    .isEmpty(),
+            )
+        }
+
+    @Test
+    fun `a library with nothing starred asks TMDB nothing`() =
+        runTest(dispatcher) {
+            val model = viewModel(FakeLibrary(listOf(show(1), show(2))))
+            model.load(DiscoverTab.FAVOURITES)
+            advanceUntilIdle()
+
+            val tab = model.state.value.favourites
+            // An empty result, not an error: there is genuinely nothing to suggest from,
+            // and the tab says so rather than reporting a failure that did not happen.
+            assertNull(tab.error)
+            assertTrue(tab.loaded)
+            assertTrue(tab.items.isEmpty())
+            assertEquals(0, server.requestCount)
+        }
+
+    @Test
+    fun `dismissing a suggestion clears it from both seeded tabs`() =
+        runTest(dispatcher) {
+            // The same show is suggested by the library at large and by the favourite, so
+            // it sits in both pools; a dismissal is about the show, not about the tab.
+            server.dispatcher =
+                object : Dispatcher() {
+                    override fun dispatch(request: RecordedRequest): MockResponse =
+                        MockResponse().setBody(recommendations(10, 11))
+                }
+
+            val model = viewModel(FakeLibrary(listOf(show(1, favourite = true))))
+            model.load(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+            model.selectTab(DiscoverTab.FAVOURITES)
+            advanceUntilIdle()
+
+            model.dismiss(10)
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(11),
+                model.state.value.favourites.items
+                    .map { it.show.id },
+            )
+            assertEquals(
+                listOf(11),
                 model.state.value.forYou.items
                     .map { it.show.id },
             )

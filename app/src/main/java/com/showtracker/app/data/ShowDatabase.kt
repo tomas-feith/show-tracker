@@ -16,7 +16,7 @@ abstract class ShowDatabase : RoomDatabase() {
     abstract fun showDao(): ShowDao
 
     companion object {
-        const val VERSION = 5
+        const val VERSION = 6
 
         const val NAME = "shows.db"
 
@@ -101,6 +101,24 @@ abstract class ShowDatabase : RoomDatabase() {
             }
 
         /**
+         * Adds `shows.favourite`, the user's star.
+         *
+         * NOT NULL defaulting to 0, so every existing row arrives unstarred - which is what
+         * was true before the column existed, rather than a value that has to be guessed at
+         * later. Unlike the metadata columns added at version 5, nothing refetches this:
+         * TMDB has no opinion about the user's favourites, so `BACKFILL_VERSION` stays
+         * where it is and no library refreshes itself on this upgrade.
+         */
+        private val MIGRATION_5_6 =
+            object : Migration(5, 6) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "ALTER TABLE shows ADD COLUMN favourite INTEGER NOT NULL DEFAULT 0",
+                    )
+                }
+            }
+
+        /**
          * Schema migrations, oldest first.
          *
          * Destructive fallback is deliberately never enabled. Most of what this database
@@ -118,7 +136,13 @@ abstract class ShowDatabase : RoomDatabase() {
          */
 
         val MIGRATIONS: List<Migration> =
-            listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            listOf(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+            )
 
         @Volatile
         private var instance: ShowDatabase? = null

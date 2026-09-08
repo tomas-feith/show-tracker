@@ -11,6 +11,7 @@ import com.showtracker.app.domain.SUGGESTIONS_PER_PAGE
 import com.showtracker.app.domain.SUGGESTION_POOL
 import com.showtracker.app.domain.SearchResult
 import com.showtracker.app.domain.SeededResults
+import com.showtracker.app.domain.TrackedShow
 import com.showtracker.app.domain.rankRecommendations
 import com.showtracker.app.network.TmdbClient
 import com.showtracker.app.ui.catchingUserFacing
@@ -25,9 +26,20 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
 
+/**
+ * The three ways in.
+ *
+ * Declared in the order the tabs are drawn: the row reads the ordinal, so moving one here
+ * moves it on screen.
+ */
 enum class DiscoverTab {
     FOR_YOU,
+    FAVOURITES,
     TRENDING,
+    ;
+
+    /** Whether this tab is built from library shows, and so has a pool to page through. */
+    val seeded: Boolean get() = this != TRENDING
 }
 
 /**
@@ -49,17 +61,51 @@ data class TabData<T>(
 data class DiscoverUiState(
     val tab: DiscoverTab = DiscoverTab.FOR_YOU,
     val forYou: TabData<Candidate> = TabData(),
+    /** Ranked from the starred shows alone; see [DiscoverViewModel.seedsFor]. */
+    val favourites: TabData<Candidate> = TabData(),
     val trending: TabData<SearchResult> = TabData(),
     /** Whether refreshing will show a further page rather than re-asking TMDB. */
     val moreSuggestions: Boolean = false,
 )
 
 /**
- * Backs both discovery tabs.
+ * Everything a tab can say about itself apart from what is in it.
+ *
+ * Extracted so the tabs' differing item types stop being a problem: `TabData<Candidate>`
+ * and `TabData<SearchResult>` cannot be edited through one reference, but the fields that
+ * every load actually touches are the same four on all of them. One `when` over the tabs
+ * now serves the spinner, the error and the note, instead of one per message.
+ */
+private data class TabStatus(
+    val loading: Boolean,
+    val loaded: Boolean,
+    val error: String?,
+    val note: String?,
+)
+
+private fun <T> TabData<T>.status(): TabStatus = TabStatus(loading, loaded, error, note)
+
+private fun <T> TabData<T>.withStatus(status: TabStatus): TabData<T> =
+    copy(
+        loading = status.loading,
+        loaded = status.loaded,
+        error = status.error,
+        note = status.note,
+    )
+
+/**
+ * Backs the three discovery tabs.
  *
  * Each tab loads on first view and is then held for the session. These are the two most
- * expensive calls the app makes - "For you" is one request per seed show - and neither
- * list changes fast enough to be worth re-fetching on every visit.
+ * expensive calls the app makes - the seeded tabs are one request per seed show - and
+ * neither list changes fast enough to be worth re-fetching on every visit.
+ *
+ * "For you" and "Favourites" are the same machinery pointed at different seeds, and they
+ * are two tabs rather than one because they answer different questions: the first is "given
+ * everything I watch", the second is "given the handful I actually love". Ranking by
+ * agreement between seeds means a library of eighty shows drowns the five starred ones -
+ * whatever the bulk of the library has in common wins every tie - so the only way to ask
+ * the second question is to ask it of the favourites alone.
  */
 class DiscoverViewModel(
     private val tmdb: TmdbClient,
@@ -83,16 +129,26 @@ class DiscoverViewModel(
     private var generation = 0
 
     /**
-     * Every ranked suggestion, of which one page is on screen.
+     * Every ranked suggestion for one seeded tab, of which one page is on screen.
      *
      * Kept whole so refreshing can show the next page instantly rather than asking TMDB the
-     * same question and re-ranking to the same answer. See [refreshForYou].
+     * same question and re-ranking to the same answer. See [refresh].
      */
-    private var pool: List<Candidate> = emptyList()
-    private var page = 0
+    private class Pool {
+        var candidates: List<Candidate> = emptyList()
+        var page: Int = 0
+    }
+
+    /** One pool per seeded tab. Trending has none: it is a single list with no ranking. */
+    private val pools =
+        DiscoverTab.entries
+            .filter { it.seeded }
+            .associateWith { Pool() }
+
+    private fun pool(tab: DiscoverTab): Pool = pools.getValue(tab)
 
     fun selectTab(tab: DiscoverTab) {
-        _state.update { it.copy(tab = tab) }
+        _state.update { it.copy(tab = tab, moreSuggestions = hasMorePages(tab)) }
         load(tab)
     }
 
@@ -101,11 +157,7 @@ class DiscoverViewModel(
         tab: DiscoverTab = _state.value.tab,
         force: Boolean = false,
     ) {
-        val current =
-            when (tab) {
-                DiscoverTab.FOR_YOU -> _state.value.forYou
-                DiscoverTab.TRENDING -> _state.value.trending
-            }
+        val current = dataFor(tab)
         if (current.loading || (current.loaded && !force)) return
 
         // One load at a time. Switching tabs mid-flight would otherwise leave two requests
@@ -114,7 +166,7 @@ class DiscoverViewModel(
         val mine = ++generation
         running =
             viewModelScope.launch {
-                startLoading(tab)
+                setStatus(tab) { it.copy(loading = true, error = null, note = null) }
 
                 // The clear has to be in a `finally`. Cancelling the previous load - which
                 // the line above does on every tab switch - unwinds it with a
@@ -125,21 +177,18 @@ class DiscoverViewModel(
                 try {
                     catchingUserFacing {
                         val key = settings.apiKey.first() ?: error("No TMDB key configured.")
-                        when (tab) {
-                            DiscoverTab.FOR_YOU -> loadForYou(key)
-                            DiscoverTab.TRENDING -> loadTrending(key)
-                        }
+                        if (tab.seeded) loadSeeded(key, tab) else loadTrending(key)
                     }.onFailure { failure ->
                         fail(tab, failure.message ?: "Could not load suggestions.")
                     }
                 } finally {
-                    if (mine == generation) stopLoading(tab)
+                    if (mine == generation) setStatus(tab) { it.copy(loading = false) }
                 }
             }
     }
 
     /**
-     * What refresh does on "For you": show the next page, or fetch afresh once spent.
+     * What refresh does: show the next page of a seeded tab, or fetch afresh once spent.
      *
      * Paging rather than re-rolling which shows are used as seeds. Dropping seeds at random
      * would certainly change the answer, but it changes it by destroying the signal the
@@ -147,41 +196,74 @@ class DiscoverViewModel(
      * screenful would be measurably worse rather than merely different. Walking down a list
      * ranked once answers the request actually being made, "show me something else", keeps
      * the good suggestions in their right order, and costs no network at all.
+     *
+     * Trending has nothing to page through, so there it is a plain re-fetch.
      */
-    fun refreshForYou() {
-        if (nextPage()) return
-        load(DiscoverTab.FOR_YOU, force = true)
+    fun refresh(tab: DiscoverTab = _state.value.tab) {
+        if (tab.seeded && nextPage(tab)) return
+        load(tab, force = true)
     }
 
     /** Advance one page if there is one. Returns false when the pool is spent. */
-    private fun nextPage(): Boolean {
-        val start = (page + 1) * SUGGESTIONS_PER_PAGE
-        if (pool.isEmpty() || start >= pool.size) return false
-        page += 1
-        showPage()
+    private fun nextPage(tab: DiscoverTab): Boolean {
+        val pool = pool(tab)
+        val start = (pool.page + 1) * SUGGESTIONS_PER_PAGE
+        if (pool.candidates.isEmpty() || start >= pool.candidates.size) return false
+        pool.page += 1
+        showPage(tab)
         return true
     }
 
-    private fun showPage() {
-        val window = pool.drop(page * SUGGESTIONS_PER_PAGE).take(SUGGESTIONS_PER_PAGE)
-        _state.update {
-            it.copy(
-                forYou = it.forYou.copy(items = window, loading = false, loaded = true),
-                moreSuggestions = (page + 1) * SUGGESTIONS_PER_PAGE < pool.size,
-            )
+    private fun showPage(tab: DiscoverTab) {
+        val pool = pool(tab)
+        val window =
+            pool.candidates
+                .drop(pool.page * SUGGESTIONS_PER_PAGE)
+                .take(SUGGESTIONS_PER_PAGE)
+
+        _state.update { state ->
+            val data =
+                candidatesFor(state, tab)
+                    .copy(items = window, loading = false, loaded = true)
+            withCandidates(state, tab, data)
+                // Only the tab being looked at owns this flag; a background pool refilling
+                // itself must not relabel the button over another tab's list.
+                .let { if (it.tab == tab) it.copy(moreSuggestions = hasMorePages(tab)) else it }
         }
     }
 
-    private suspend fun loadForYou(key: String) {
+    private fun hasMorePages(tab: DiscoverTab): Boolean {
+        if (!tab.seeded) return false
+        val pool = pool(tab)
+        return (pool.page + 1) * SUGGESTIONS_PER_PAGE < pool.candidates.size
+    }
+
+    /**
+     * Which library shows seed [tab].
+     *
+     * Newest first, then capped. This is one request per seed, and a large library would
+     * otherwise open a hundred of them for a list nobody scrolls to the end of. What was
+     * added most recently is also the best stand-in available for what the user is
+     * interested in now.
+     */
+    private fun seedsFor(
+        tab: DiscoverTab,
+        shows: List<TrackedShow>,
+    ): List<TrackedShow> =
+        shows
+            .filter { tab != DiscoverTab.FAVOURITES || it.favourite }
+            .sortedByDescending { it.addedAt }
+            .take(MAX_SEEDS)
+
+    private suspend fun loadSeeded(
+        key: String,
+        tab: DiscoverTab,
+    ) {
         val shows = library.all()
         val tracked = shows.map { it.id }.toSet()
         val dismissed = library.dismissedIds()
 
-        // Newest first, then capped. This is one request per seed, and a large library
-        // would otherwise open a hundred of them for a list nobody scrolls to the end of.
-        // What was added most recently is also the best stand-in available for what the
-        // user is interested in now.
-        val seeds = shows.sortedByDescending { it.addedAt }.take(MAX_SEEDS)
+        val seeds = seedsFor(tab, shows)
 
         val fetched = tmdb.fetchRecommendations(key, seeds.map { it.id })
         // Built by walking the seeds rather than the response map, so the ranking's
@@ -200,15 +282,18 @@ class DiscoverViewModel(
             throw fetched.values.firstNotNullOf { it.exceptionOrNull() }
         }
 
-        pool =
+        // Followed shows are excluded from both seeded tabs, favourites included: a
+        // starred show seeding the list is the reason a suggestion is there, and offering
+        // it back as the suggestion would be the tab recommending the library to itself.
+        pool(tab).candidates =
             rankRecommendations(
                 seeded,
                 exclude = tracked + dismissed,
                 limit = SUGGESTION_POOL,
             )
-        page = 0
-        showPage()
-        _state.update { it.copy(forYou = it.forYou.copy(note = describeFailures(failures))) }
+        pool(tab).page = 0
+        showPage(tab)
+        setStatus(tab) { it.copy(note = describeFailures(failures)) }
     }
 
     private suspend fun loadTrending(key: String) {
@@ -235,16 +320,23 @@ class DiscoverViewModel(
     /**
      * "Not interested": drop a suggestion and never rank it again.
      *
-     * Removed from the pool in place rather than by reloading, so the list does not
+     * Removed from the pools in place rather than by reloading, so the list does not
      * reshuffle under the user's finger and the page refills from behind instead of leaving
-     * a gap.
+     * a gap. Both seeded pools are swept: the same show can sit in either, and a dismissal
+     * is about the show rather than about the tab it was seen on.
      */
     fun dismiss(id: Int) {
-        // Read before the removal below, and from the sheet if the pool no longer holds it
-        // - dismissing from an already-stale page would otherwise store a blank name and
-        // leave an unidentifiable row in the hidden-shows list.
+        // Read before the removal below, and from the sheet if no pool holds it - dismissing
+        // from an already-stale page would otherwise store a blank name and leave an
+        // unidentifiable row in the hidden-shows list.
         val name =
-            pool.firstOrNull { it.show.id == id }?.show?.name
+            pools.values
+                .firstNotNullOfOrNull { pool ->
+                    pool.candidates
+                        .firstOrNull { it.show.id == id }
+                        ?.show
+                        ?.name
+                }
                 ?: previews.preview.value
                     ?.takeIf { it.id == id }
                     ?.name
@@ -252,56 +344,34 @@ class DiscoverViewModel(
 
         viewModelScope.launch {
             library.dismiss(id, name, Instant.now().toString())
-            removeFromPool(id)
+            removeFromPools(id)
             if (previews.preview.value?.id == id) closePreview()
         }
     }
 
-    /** Drop a followed show out of the pool, so the page refills rather than showing a tick. */
+    /** Drop a followed show out of the pools, so the page refills rather than showing a tick. */
     fun onFollowed(id: Int) {
-        removeFromPool(id)
+        removeFromPools(id)
     }
 
-    private fun removeFromPool(id: Int) {
-        pool = pool.filterNot { it.show.id == id }
-        // Removing the last item of the last page would otherwise leave it blank.
-        if (page > 0 && page * SUGGESTIONS_PER_PAGE >= pool.size) page -= 1
-        showPage()
+    private fun removeFromPools(id: Int) {
+        pools.forEach { (tab, pool) ->
+            if (pool.candidates.none { it.show.id == id }) return@forEach
+            pool.candidates = pool.candidates.filterNot { it.show.id == id }
+            // Removing the last item of the last page would otherwise leave it blank.
+            if (pool.page > 0 && pool.page * SUGGESTIONS_PER_PAGE >= pool.candidates.size) {
+                pool.page -= 1
+            }
+            showPage(tab)
+        }
     }
 
     fun showError(message: String) {
-        setError(_state.value.tab, message)
+        setStatus(_state.value.tab) { it.copy(error = message) }
     }
 
     fun dismissError() {
-        setError(_state.value.tab, null)
-    }
-
-    // The two tabs hold different item types, so `TabData.copy` cannot be called through a
-    // shared reference to either. These spell the branch out instead, which is shorter than
-    // the generics that would be needed to avoid it.
-
-    private fun startLoading(tab: DiscoverTab) {
-        _state.update {
-            when (tab) {
-                DiscoverTab.FOR_YOU -> {
-                    it.copy(forYou = it.forYou.copy(loading = true, error = null, note = null))
-                }
-
-                DiscoverTab.TRENDING -> {
-                    it.copy(trending = it.trending.copy(loading = true, error = null, note = null))
-                }
-            }
-        }
-    }
-
-    private fun stopLoading(tab: DiscoverTab) {
-        _state.update {
-            when (tab) {
-                DiscoverTab.FOR_YOU -> it.copy(forYou = it.forYou.copy(loading = false))
-                DiscoverTab.TRENDING -> it.copy(trending = it.trending.copy(loading = false))
-            }
-        }
+        setStatus(_state.value.tab) { it.copy(error = null) }
     }
 
     /**
@@ -312,34 +382,70 @@ class DiscoverViewModel(
         tab: DiscoverTab,
         message: String,
     ) {
-        _state.update {
+        setStatus(tab) { it.copy(loading = false, error = message) }
+    }
+
+    /** Edit everything about a tab except what is in it; see [TabStatus]. */
+    private fun setStatus(
+        tab: DiscoverTab,
+        block: (TabStatus) -> TabStatus,
+    ) {
+        _state.update { state ->
             when (tab) {
                 DiscoverTab.FOR_YOU -> {
-                    it.copy(forYou = it.forYou.copy(loading = false, error = message))
+                    state.copy(forYou = state.forYou.withStatus(block(state.forYou.status())))
+                }
+
+                DiscoverTab.FAVOURITES -> {
+                    state.copy(
+                        favourites =
+                            state.favourites.withStatus(block(state.favourites.status())),
+                    )
                 }
 
                 DiscoverTab.TRENDING -> {
-                    it.copy(trending = it.trending.copy(loading = false, error = message))
+                    state.copy(
+                        trending = state.trending.withStatus(block(state.trending.status())),
+                    )
                 }
             }
         }
     }
 
-    private fun setError(
-        tab: DiscoverTab,
-        message: String?,
-    ) {
-        _state.update {
-            when (tab) {
-                DiscoverTab.FOR_YOU -> it.copy(forYou = it.forYou.copy(error = message))
-                DiscoverTab.TRENDING -> it.copy(trending = it.trending.copy(error = message))
-            }
+    private fun dataFor(tab: DiscoverTab): TabData<*> =
+        when (tab) {
+            DiscoverTab.FOR_YOU -> _state.value.forYou
+            DiscoverTab.FAVOURITES -> _state.value.favourites
+            DiscoverTab.TRENDING -> _state.value.trending
         }
-    }
 
     companion object {
-        /** Ceiling on how many library shows are used as seeds; see `loadForYou`. */
+        /** Ceiling on how many shows seed one tab; see [seedsFor]. */
         const val MAX_SEEDS = 40
+
+        private fun candidatesFor(
+            state: DiscoverUiState,
+            tab: DiscoverTab,
+        ): TabData<Candidate> =
+            when (tab) {
+                DiscoverTab.FOR_YOU -> state.forYou
+
+                DiscoverTab.FAVOURITES -> state.favourites
+
+                // Unreachable: trending holds no candidates and has no pool to page.
+                DiscoverTab.TRENDING -> TabData()
+            }
+
+        private fun withCandidates(
+            state: DiscoverUiState,
+            tab: DiscoverTab,
+            data: TabData<Candidate>,
+        ): DiscoverUiState =
+            when (tab) {
+                DiscoverTab.FOR_YOU -> state.copy(forYou = data)
+                DiscoverTab.FAVOURITES -> state.copy(favourites = data)
+                DiscoverTab.TRENDING -> state
+            }
 
         private fun describeFailures(failures: Int): String? =
             when (failures) {

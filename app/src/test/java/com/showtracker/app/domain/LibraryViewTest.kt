@@ -26,6 +26,7 @@ class LibraryViewTest {
         seasons: List<Season> = listOf(Season(1, "Season 1", "2020-01-01", 10)),
         watchedThroughSeason: Int = 0,
         status: String = "Returning Series",
+        favourite: Boolean = false,
     ) = TrackedShow(
         id = id,
         name = name,
@@ -37,6 +38,7 @@ class LibraryViewTest {
         voteCount = voteCount,
         genres = genres,
         episodeRunTime = episodeRunTime,
+        favourite = favourite,
     )
 
     private fun names(shows: List<TrackedShow>) = shows.map { it.name }
@@ -241,6 +243,31 @@ class LibraryViewTest {
     }
 
     @Test
+    fun `keeps only starred shows while the favourites filter is on`() {
+        val shows =
+            listOf(
+                show(1, "Starred", favourite = true),
+                show(2, "Plain"),
+            )
+
+        assertEquals(
+            listOf("Starred"),
+            names(applyFilters(shows, LibraryFilters(favouritesOnly = true), today)),
+        )
+        // And it composes with the other axes rather than replacing them.
+        assertEquals(
+            emptyList<String>(),
+            names(
+                applyFilters(
+                    shows,
+                    LibraryFilters(favouritesOnly = true, score = ScoreFloor.GOOD),
+                    today,
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun `lists the genres the library actually has, alphabetically and once each`() {
         val shows =
             listOf(
@@ -257,5 +284,7 @@ class LibraryViewTest {
         assertEquals(false, LibraryFilters().active)
         assertTrue(LibraryFilters(genres = setOf("Drama")).active)
         assertTrue(LibraryFilters(score = ScoreFloor.GOOD).active)
+        // The star hides shows like any other axis, so the screen has to disclose it too.
+        assertTrue(LibraryFilters(favouritesOnly = true).active)
     }
 }

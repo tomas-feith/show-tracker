@@ -44,6 +44,9 @@ class LibraryExportTest {
                 episodeRunTime = 55,
                 type = "Miniseries",
                 numberOfEpisodes = 10,
+                // Starred: unlike everything above it, no refresh could put this back, so
+                // an export that dropped it would lose it on the next restore.
+                favourite = true,
             ),
             TrackedShow(
                 id = 2,

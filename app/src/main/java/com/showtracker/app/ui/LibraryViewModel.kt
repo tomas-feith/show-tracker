@@ -270,6 +270,20 @@ class LibraryViewModel(
         viewModelScope.launch { library.setInProgress(id, season) }
     }
 
+    /**
+     * Star or unstar a show.
+     *
+     * Takes the new value rather than toggling what is stored: the caller is a button
+     * drawn from the library flow, so it already knows which way it is pointing, and a
+     * blind toggle would flip twice on a double tap and land back where it started.
+     */
+    fun setFavourite(
+        id: Int,
+        favourite: Boolean,
+    ) {
+        viewModelScope.launch { library.setFavourite(id, favourite) }
+    }
+
     /** "I am up to date": watched through the latest aired season. */
     fun markCaughtUp(id: Int) {
         viewModelScope.launch {

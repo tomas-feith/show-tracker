@@ -11,6 +11,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.showtracker.app.AppContainer
 import com.showtracker.app.ui.detail.DetailScreen
+import com.showtracker.app.ui.detail.ShowDetailViewModel
 import com.showtracker.app.ui.discover.DiscoverScreen
 import com.showtracker.app.ui.discover.DiscoverViewModel
 import com.showtracker.app.ui.library.LibraryScreen
@@ -91,9 +92,15 @@ fun ShowTrackerNavHost(
             Routes.DETAIL,
             arguments = listOf(navArgument("showId") { type = NavType.IntType }),
         ) { entry ->
+            // Scoped to this entry rather than to the activity, so the suggestions belong
+            // to the show on screen: an activity-scoped one would carry the previous
+            // show's list into the next one and only replace it once the fetch returned.
+            val detailViewModel: ShowDetailViewModel =
+                viewModel(factory = ShowDetailViewModel.factory(container))
             DetailScreen(
                 showId = entry.arguments?.getInt("showId") ?: return@composable,
                 viewModel = libraryViewModel,
+                detailViewModel = detailViewModel,
                 onBack = { navController.popBackStack() },
             )
         }

@@ -193,6 +193,47 @@ class MigrationTest {
         }
     }
 
+    /**
+     * Adding the star must leave progress alone, and must leave every existing show
+     * unstarred.
+     *
+     * The star is the user's own data, like the watermark and unlike everything TMDB
+     * sends, so there is no refresh that would put back a wrong value here: whatever this
+     * migration writes is what the user is left with.
+     */
+    @Test
+    @Throws(IOException::class)
+    fun addingFavouriteKeepsExistingProgress() {
+        helper.createDatabase(TEST_DB, 5).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO shows
+                    (id, name, overview, posterPath, firstAirDate, status,
+                     watchedThroughSeason, inProgressSeason, knownAiredSeason,
+                     addedAt, lastCheckedAt, voteAverage, voteCount, genres,
+                     episodeRunTime, type, numberOfEpisodes)
+                VALUES (1, 'Shōgun', 'An overview.', NULL, '2024-02-27', 'Returning Series',
+                        3, 4, 4, '2026-01-05T10:00:00.000Z', NULL, 8.4, 4321, 'Drama',
+                        55, 'Miniseries', 10)
+                """.trimIndent(),
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 6, true, *MIGRATIONS)
+
+        val query =
+            "SELECT watchedThroughSeason, inProgressSeason, voteAverage, favourite " +
+                "FROM shows WHERE id = 1"
+
+        db.query(query).use { cursor ->
+            assertTrue("the row did not survive the migration", cursor.moveToFirst())
+            assertEquals("watch progress was disturbed", 3, cursor.getInt(0))
+            assertEquals("the in-progress marker was disturbed", 4, cursor.getInt(1))
+            assertEquals("the score was disturbed", 8.4, cursor.getDouble(2), 0.001)
+            assertEquals("nothing was starred before there was a star", 0, cursor.getInt(3))
+        }
+    }
+
     @Test
     @Throws(IOException::class)
     fun currentSchemaOpensCleanly() {

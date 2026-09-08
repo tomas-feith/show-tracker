@@ -109,6 +109,19 @@ interface ShowDao {
     )
 
     /**
+     * Star or unstar a show.
+     *
+     * Its own single-column update rather than a re-save of the whole row: the star is the
+     * user's own data and a full upsert here would write back whatever TMDB fields the
+     * caller happened to be holding, which on a stale screen is a way to undo a refresh.
+     */
+    @Query("UPDATE shows SET favourite = :favourite WHERE id = :id")
+    suspend fun setFavourite(
+        id: Int,
+        favourite: Boolean,
+    )
+
+    /**
      * Write a show and replace its season list in one transaction.
      *
      * The seasons are deleted and reinserted rather than upserted, because TMDB can remove

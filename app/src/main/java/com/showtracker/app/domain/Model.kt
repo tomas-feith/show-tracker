@@ -165,6 +165,16 @@ data class TrackedShow(
     val type: String = "",
     /** Episodes across every season, aired or not. */
     val numberOfEpisodes: Int = 0,
+    /**
+     * Whether the user has starred this show.
+     *
+     * The user's own opinion, and the only field here that TMDB is not the source of apart
+     * from the two watermarks - so a refresh must never overwrite it, and an export has to
+     * carry it. It is also what seeds the favourites tab in discovery, which is why it is a
+     * flag on the show rather than a separate list: a favourite is a followed show, and a
+     * second table would let the two disagree about whether it is still followed.
+     */
+    val favourite: Boolean = false,
 )
 
 /**

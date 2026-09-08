@@ -28,6 +28,7 @@ class ShowDaoTest {
     private fun show(
         watchedThroughSeason: Int = 0,
         inProgressSeason: Int? = null,
+        favourite: Boolean = false,
     ) = ShowEntity(
         id = 1,
         name = "Shōgun",
@@ -46,6 +47,7 @@ class ShowDaoTest {
         episodeRunTime = 55,
         type = "Miniseries",
         numberOfEpisodes = 10,
+        favourite = favourite,
     )
 
     private fun stored(): ShowEntity = runBlocking { checkNotNull(dao.getById(1)).show }
@@ -65,6 +67,22 @@ class ShowDaoTest {
     fun close() {
         db.close()
     }
+
+    @Test
+    fun starsAndUnstarsWithoutTouchingProgress() =
+        runBlocking {
+            dao.upsertShow(show(watchedThroughSeason = 2, inProgressSeason = 3))
+
+            dao.setFavourite(1, true)
+            assertEquals(true, stored().favourite)
+            // The single-column update is the point: the user's position must be exactly
+            // where it was, not wherever the caller's copy of the row happened to say.
+            assertEquals(2, stored().watchedThroughSeason)
+            assertEquals(3, stored().inProgressSeason)
+
+            dao.setFavourite(1, false)
+            assertEquals(false, stored().favourite)
+        }
 
     @Test
     fun marksASeasonAboveTheWatermarkAsInProgress() =

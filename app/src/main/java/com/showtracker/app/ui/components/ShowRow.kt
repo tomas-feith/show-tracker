@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -177,14 +178,32 @@ fun ShowRow(
         Poster(show.posterPath)
 
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(
-                text = show.name,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = show.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    // `fill = false` so the star sits against the name rather than being
+                    // pushed to the far side of the row by a short title.
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (show.favourite) {
+                    Icon(
+                        Icons.Default.Star,
+                        // Announced by [describeRow] instead; this row's semantics are
+                        // cleared and replaced wholesale.
+                        contentDescription = null,
+                        tint = Accent,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+            }
             Text(
                 text = stateLabel.text,
                 style = MaterialTheme.typography.bodySmall,
@@ -244,13 +263,21 @@ fun ResultRow(
     subtitleColor: Color = TextMuted,
     voteAverage: Double = 0.0,
     voteCount: Int = 0,
+    /**
+     * The row's own side inset.
+     *
+     * A parameter because the show screen already indents its whole column, and a row
+     * carrying a second 16dp there would sit visibly further in than everything above it.
+     * Screens that draw these rows edge to edge - search, discovery - take the default.
+     */
+    horizontalPadding: androidx.compose.ui.unit.Dp = 16.dp,
 ) {
     Row(
         modifier =
             modifier
                 .fillMaxWidth()
                 .clickable(enabled = !tracked, onClick = onClick)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = horizontalPadding, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -315,6 +342,7 @@ fun describeRow(
 ): String =
     listOfNotNull(
         show.name,
+        "Favourite".takeIf { show.favourite },
         label(showState(show, today), show).text,
         "Watched through season ${show.watchedThroughSeason}"
             .takeIf { show.watchedThroughSeason > 0 },

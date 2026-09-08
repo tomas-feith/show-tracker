@@ -83,10 +83,23 @@ data class LibraryFilters(
     val genres: Set<String> = emptySet(),
     val runtime: RuntimeBand? = null,
     val score: ScoreFloor? = null,
+    /**
+     * Show only starred shows.
+     *
+     * A flag rather than a two-valued axis: "only the ones I have not starred" is not a
+     * question anyone asks, and offering it as a second chip would imply the star means
+     * something about the shows without it.
+     */
+    val favouritesOnly: Boolean = false,
 ) {
     /** Whether anything is being hidden, which is what the screen has to disclose. */
     val active: Boolean
-        get() = states.isNotEmpty() || genres.isNotEmpty() || runtime != null || score != null
+        get() =
+            states.isNotEmpty() ||
+                genres.isNotEmpty() ||
+                runtime != null ||
+                score != null ||
+                favouritesOnly
 }
 
 /**
@@ -115,8 +128,9 @@ fun applyFilters(
         val byScore =
             filters.score == null ||
                 (show.voteCount > 0 && show.voteAverage >= filters.score.minimum)
+        val byFavourite = !filters.favouritesOnly || show.favourite
 
-        byState && byGenre && byRuntime && byScore
+        byState && byGenre && byRuntime && byScore && byFavourite
     }
 }
 

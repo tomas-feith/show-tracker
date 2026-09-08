@@ -92,6 +92,14 @@ internal data class ShowPayload(
     val episodeRunTime: Int? = null,
     val type: String = "",
     val numberOfEpisodes: Int = 0,
+    /**
+     * The user's star.
+     *
+     * Unlike the metadata above it, this is not refetchable: TMDB has no idea what the user
+     * likes, so a file that dropped it would lose the stars for good on a restore. Absent
+     * in every file written before favourites existed, where false is the truth.
+     */
+    val favourite: Boolean = false,
 )
 
 @Serializable
@@ -194,6 +202,7 @@ internal fun ShowPayload.toDomain(): TrackedShow {
         episodeRunTime = episodeRunTime,
         type = type,
         numberOfEpisodes = numberOfEpisodes,
+        favourite = favourite,
     )
 }
 
@@ -235,6 +244,7 @@ internal fun TrackedShow.toPayload(): ShowPayload =
         episodeRunTime = episodeRunTime,
         type = type,
         numberOfEpisodes = numberOfEpisodes,
+        favourite = favourite,
     )
 
 private fun EpisodeRef.toPayload(): EpisodePayload =

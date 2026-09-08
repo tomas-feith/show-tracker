@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.showtracker.app.domain.Candidate
 import com.showtracker.app.domain.describeReason
 import com.showtracker.app.ui.LibraryViewModel
 import com.showtracker.app.ui.components.Divider
@@ -45,13 +46,15 @@ import com.showtracker.app.ui.theme.TextFaint
 import com.showtracker.app.ui.theme.TextMuted
 
 /**
- * Two ways in to a show the user does not already follow.
+ * Three ways in to a show the user does not already follow.
  *
  * "For you" is built from the library, one TMDB recommendation list per followed show,
- * ranked by how many of them agree - see `rankRecommendations`. "Trending" is TMDB's
- * global weekly list and has nothing to do with the library, which is exactly why it is a
- * separate tab rather than mixed in: a suggestion that claims to be about your shows and
- * is not would make the whole screen untrustworthy.
+ * ranked by how many of them agree - see `rankRecommendations`. "Favourites" is the same
+ * question asked of the starred shows alone, which is the only way to ask it: ranking by
+ * agreement means a large library outvotes a handful of favourites every time. "Trending"
+ * is TMDB's global weekly list and has nothing to do with the library, which is exactly why
+ * it is a separate tab rather than mixed in: a suggestion that claims to be about your
+ * shows and is not would make the whole screen untrustworthy.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,17 +90,11 @@ fun DiscoverScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        if (state.tab == DiscoverTab.FOR_YOU) {
-                            viewModel.refreshForYou()
-                        } else {
-                            viewModel.load(force = true)
-                        }
-                    }) {
+                    IconButton(onClick = { viewModel.refresh() }) {
                         Icon(
                             Icons.Default.Refresh,
                             contentDescription =
-                                if (state.tab == DiscoverTab.FOR_YOU && state.moreSuggestions) {
+                                if (state.moreSuggestions) {
                                     "Show different suggestions"
                                 } else {
                                     "Refresh suggestions"
@@ -119,25 +116,27 @@ fun DiscoverScreen(
 
             when (state.tab) {
                 DiscoverTab.FOR_YOU -> {
-                    TabBody(
+                    Suggestions(
                         data = state.forYou,
-                        onDismissError = viewModel::dismissError,
+                        tracked = tracked,
+                        viewModel = viewModel,
                         emptyTitle = "Nothing to suggest yet",
                         emptyBody =
                             "Follow a few shows and TMDB's recommendations for them will " +
                                 "be pooled here.",
-                        key = { it.show.id },
-                    ) { candidate ->
-                        ResultRow(
-                            name = candidate.show.name,
-                            posterPath = candidate.show.posterPath,
-                            subtitle = describeReason(candidate.becauseOf),
-                            tracked = candidate.show.id in tracked,
-                            onClick = { viewModel.openPreview(candidate.show) },
-                            voteAverage = candidate.show.voteAverage,
-                            voteCount = candidate.show.voteCount,
-                        )
-                    }
+                    )
+                }
+
+                DiscoverTab.FAVOURITES -> {
+                    Suggestions(
+                        data = state.favourites,
+                        tracked = tracked,
+                        viewModel = viewModel,
+                        emptyTitle = "No favourites yet",
+                        emptyBody =
+                            "Star a show from its own screen, and suggestions built from " +
+                                "your starred shows alone will appear here.",
+                    )
                 }
 
                 DiscoverTab.TRENDING -> {
@@ -198,6 +197,13 @@ private fun Tabs(
             unselectedContentColor = TextMuted,
         )
         Tab(
+            selected = selected == DiscoverTab.FAVOURITES,
+            onClick = { onSelect(DiscoverTab.FAVOURITES) },
+            text = { Text("Favourites") },
+            selectedContentColor = Accent,
+            unselectedContentColor = TextMuted,
+        )
+        Tab(
             selected = selected == DiscoverTab.TRENDING,
             onClick = { onSelect(DiscoverTab.TRENDING) },
             text = { Text("Trending") },
@@ -208,7 +214,41 @@ private fun Tabs(
 }
 
 /**
- * The shared frame around either tab: spinner, error, note, empty state, or the list.
+ * A ranked suggestion list, which is what both seeded tabs are.
+ *
+ * One function rather than two identical blocks: the tabs differ only in what they are
+ * built from and in what they say when they are empty, and that difference belongs in the
+ * two call sites rather than in two copies of a row.
+ */
+@Composable
+private fun Suggestions(
+    data: TabData<Candidate>,
+    tracked: Set<Int>,
+    viewModel: DiscoverViewModel,
+    emptyTitle: String,
+    emptyBody: String,
+) {
+    TabBody(
+        data = data,
+        onDismissError = viewModel::dismissError,
+        emptyTitle = emptyTitle,
+        emptyBody = emptyBody,
+        key = { it.show.id },
+    ) { candidate ->
+        ResultRow(
+            name = candidate.show.name,
+            posterPath = candidate.show.posterPath,
+            subtitle = describeReason(candidate.becauseOf),
+            tracked = candidate.show.id in tracked,
+            onClick = { viewModel.openPreview(candidate.show) },
+            voteAverage = candidate.show.voteAverage,
+            voteCount = candidate.show.voteCount,
+        )
+    }
+}
+
+/**
+ * The shared frame around any tab: spinner, error, note, empty state, or the list.
  *
  * Both tabs load the same way and fail the same way, so the states they can be in are
  * worth writing once - only the row differs, which is what [row] is for.

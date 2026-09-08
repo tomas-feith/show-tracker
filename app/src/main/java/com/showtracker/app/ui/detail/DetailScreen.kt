@@ -18,7 +18,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,6 +32,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,13 +45,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.showtracker.app.domain.SearchResult
 import com.showtracker.app.domain.Season
 import com.showtracker.app.domain.TrackedShow
 import com.showtracker.app.domain.hasAired
 import com.showtracker.app.domain.realSeasons
 import com.showtracker.app.domain.seasonInProgress
 import com.showtracker.app.ui.LibraryViewModel
+import com.showtracker.app.ui.components.Divider
 import com.showtracker.app.ui.components.Poster
+import com.showtracker.app.ui.components.Preview
+import com.showtracker.app.ui.components.PreviewSheet
+import com.showtracker.app.ui.components.ResultRow
 import com.showtracker.app.ui.components.ShowMeta
 import com.showtracker.app.ui.components.describeKind
 import com.showtracker.app.ui.theme.Accent
@@ -66,12 +75,25 @@ import java.time.LocalDate
 fun DetailScreen(
     showId: Int,
     viewModel: LibraryViewModel,
+    /** Owns the "more like this" list and its preview sheet; see [ShowDetailViewModel]. */
+    detailViewModel: ShowDetailViewModel,
     onBack: () -> Unit,
     today: LocalDate = LocalDate.now(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val show = state.shows.firstOrNull { it.id == showId }
     var confirmingRemove by remember { mutableStateOf(false) }
+
+    val similar by detailViewModel.similar.collectAsStateWithLifecycle()
+    val preview by detailViewModel.preview.collectAsStateWithLifecycle()
+    val tracked = state.shows.map { it.id }.toSet()
+
+    // Keyed on the key as well as the show: on a cold start the library state arrives
+    // before the settings do, and a load fired against a null key would fail the section
+    // for the whole visit.
+    LaunchedEffect(showId, state.apiKey) {
+        if (state.apiKey != null) detailViewModel.load(showId)
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -89,6 +111,13 @@ fun DetailScreen(
                 },
                 actions = {
                     if (show != null) {
+                        // Given the value it is moving to rather than toggling what is
+                        // stored, so a double tap lands where the second tap pointed.
+                        FavouriteToggle(
+                            favourite = show.favourite,
+                            name = show.name,
+                            onToggle = { viewModel.setFavourite(show.id, it) },
+                        )
                         IconButton(onClick = { confirmingRemove = true }) {
                             Icon(
                                 Icons.Default.Delete,
@@ -156,27 +185,171 @@ fun DetailScreen(
             )
 
             SeasonList(show, today, viewModel)
+
+            SimilarSection(
+                similar = similar,
+                tracked = tracked,
+                onOpen = detailViewModel::openPreview,
+                onDismissError = detailViewModel::dismissError,
+            )
         }
     }
 
+    preview?.let { showing ->
+        SuggestionSheet(showing, tracked, viewModel, detailViewModel)
+    }
+
     if (confirmingRemove && show != null) {
-        AlertDialog(
-            onDismissRequest = { confirmingRemove = false },
-            title = { Text("Stop following ${show.name}?") },
-            text = { Text("Your watched-through position for this show is forgotten.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmingRemove = false
-                    viewModel.removeShow(show.id)
-                    onBack()
-                }) {
-                    Text("Stop following", color = Danger)
-                }
+        ConfirmRemoval(
+            name = show.name,
+            onConfirm = {
+                confirmingRemove = false
+                viewModel.removeShow(show.id)
+                onBack()
             },
-            dismissButton = {
-                TextButton(onClick = { confirmingRemove = false }) { Text("Cancel") }
-            },
+            onCancel = { confirmingRemove = false },
         )
+    }
+}
+
+/**
+ * The one destructive action on this screen, behind a confirmation.
+ *
+ * Worth confirming because it is the only thing here that loses data the app cannot get
+ * back: the seasons come from TMDB, the watched-through position does not.
+ */
+@Composable
+private fun ConfirmRemoval(
+    name: String,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Stop following $name?") },
+        text = { Text("Your watched-through position for this show is forgotten.") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text("Stop following", color = Danger) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun FavouriteToggle(
+    favourite: Boolean,
+    name: String,
+    onToggle: (Boolean) -> Unit,
+) {
+    IconButton(onClick = { onToggle(!favourite) }) {
+        Icon(
+            if (favourite) Icons.Default.Star else Icons.Default.StarBorder,
+            contentDescription =
+                if (favourite) {
+                    "Remove $name from favourites"
+                } else {
+                    "Add $name to favourites"
+                },
+            tint = if (favourite) Accent else TextMuted,
+        )
+    }
+}
+
+/**
+ * The same preview sheet the discovery screen uses, on the same terms.
+ *
+ * Following from here is the point of the section, and "Not interested" is offered because
+ * these rows are suggestions: a show turned down here is turned down everywhere, which is
+ * what the button already promised on the other screen.
+ */
+@Composable
+private fun SuggestionSheet(
+    showing: Preview,
+    tracked: Set<Int>,
+    viewModel: LibraryViewModel,
+    detailViewModel: ShowDetailViewModel,
+) {
+    PreviewSheet(
+        preview = showing,
+        alreadyFollowing = showing.id in tracked,
+        onFollow = { seenUpTo ->
+            viewModel.addShow(showing.id, seenUpTo, detailViewModel::showError)
+            detailViewModel.onFollowed(showing.id)
+            detailViewModel.closePreview()
+        },
+        onDismissShow = { detailViewModel.dismiss(showing.id) },
+        onClose = detailViewModel::closePreview,
+    )
+}
+
+/**
+ * "More like this", at the foot of the show.
+ *
+ * TMDB's list for this one show, in TMDB's order. The discovery screen ranks its pool by
+ * agreement between several of the user's shows, and with a single seed there is no
+ * agreement to measure - so re-ordering here would only replace TMDB's own confidence with
+ * a tiebreak that means nothing.
+ *
+ * A followed show stays in the list wearing the "already following" tick rather than being
+ * dropped. The discovery tab drops them because it answers "what next", and something you
+ * already have is not an answer to that; this section answers "what is this show like", and
+ * being shown three you already follow is part of the answer.
+ *
+ * Nothing is drawn until there is something to draw: a failed fetch is one dismissable
+ * line, and an empty one is silence rather than a heading over a gap.
+ */
+@Composable
+private fun SimilarSection(
+    similar: SimilarShows,
+    tracked: Set<Int>,
+    onOpen: (SearchResult) -> Unit,
+    onDismissError: () -> Unit,
+) {
+    if (similar.loading) {
+        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        }
+        return
+    }
+
+    similar.error?.let { message ->
+        Text(
+            message,
+            style = MaterialTheme.typography.bodySmall,
+            color = Danger,
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onDismissError),
+        )
+        return
+    }
+
+    if (similar.items.isEmpty()) return
+
+    Text(
+        "More like this",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onBackground,
+    )
+
+    // A plain column, not a LazyColumn: the whole screen is already one scrolling column,
+    // and a lazy list nested inside it has no height of its own to be lazy about.
+    Column(Modifier.fillMaxWidth()) {
+        similar.items.forEach { result ->
+            ResultRow(
+                name = result.name,
+                posterPath = result.posterPath,
+                subtitle = result.firstAirDate?.take(4) ?: "Date unknown",
+                tracked = result.id in tracked,
+                onClick = { onOpen(result) },
+                voteAverage = result.voteAverage,
+                voteCount = result.voteCount,
+                // The screen's column already carries the 16dp side inset these rows
+                // normally add for themselves.
+                horizontalPadding = 0.dp,
+            )
+            Divider()
+        }
     }
 }
 

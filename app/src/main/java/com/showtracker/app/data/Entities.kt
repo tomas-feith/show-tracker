@@ -71,6 +71,16 @@ data class ShowEntity(
     val type: String,
     @ColumnInfo(defaultValue = "0")
     val numberOfEpisodes: Int,
+    /**
+     * The user's star. Added at schema version 6, false for every row that predates it -
+     * which is the truth: nothing was starred before there was a star.
+     *
+     * Unlike the metadata columns, no refresh fills this in, because TMDB is not the source
+     * of it. That is also why [com.showtracker.app.ui.LibraryViewModel.BACKFILL_VERSION]
+     * was not bumped for it.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val favourite: Boolean,
 )
 
 /**
@@ -196,6 +206,7 @@ fun ShowWithSeasons.toDomain(): TrackedShow =
         episodeRunTime = show.episodeRunTime,
         type = show.type,
         numberOfEpisodes = show.numberOfEpisodes,
+        favourite = show.favourite,
     )
 
 fun TrackedShow.toEntity(): ShowEntity =
@@ -219,6 +230,7 @@ fun TrackedShow.toEntity(): ShowEntity =
         episodeRunTime = episodeRunTime,
         type = type,
         numberOfEpisodes = numberOfEpisodes,
+        favourite = favourite,
     )
 
 /**

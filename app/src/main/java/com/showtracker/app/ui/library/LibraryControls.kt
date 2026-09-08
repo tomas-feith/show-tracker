@@ -120,6 +120,15 @@ fun FilterSheet(
                 }
             }
 
+            // First, above the state chips: it is the one axis that is about the user's
+            // own opinion rather than about what the show is doing, and it is the most
+            // likely reason to open the sheet at all.
+            Section("Favourites") {
+                Chip("Starred only", filters.favouritesOnly) {
+                    onChange(filters.copy(favouritesOnly = !filters.favouritesOnly))
+                }
+            }
+
             Section("State") {
                 StateGroup.entries.forEach { group ->
                     Chip(group.label, group in filters.states) {

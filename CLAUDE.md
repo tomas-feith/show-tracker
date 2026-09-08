@@ -54,7 +54,7 @@ Built since, beyond the original phases:
   (`notify/BackupWorker`) covers going back to how the library looked before a
   mistake: a dated JSON written daily into a folder the user picks through SAF,
   keeping the last 14.
-- **Schema is at version 5.** 2 added `inProgressSeason`, 3 added
+- **Schema is at version 6.** 2 added `inProgressSeason`, 3 added
   `shows.overview` and the `dismissed` table, 4 added `dismissed.name`, 5 added
   the show metadata TMDB already sends on `/tv/{id}` and the client used to
   discard: `voteAverage`/`voteCount`, `genres`, `episodeRunTime`, `type` and
@@ -67,8 +67,33 @@ Built since, beyond the original phases:
   TMDB's `episode_run_time` is a legacy field it often leaves empty, so the
   client averages it when present, falls back to the runtime on the last aired
   episode, and stores null when there is neither. A 0 would render as "0m".
+  6 added `shows.favourite`, the user's star. It is the third column TMDB is not
+  the source of - with `watchedThroughSeason` and `inProgressSeason` - so a
+  refresh must never write it, the export carries it (nothing could refetch it),
+  and `BACKFILL_VERSION` was deliberately *not* bumped for it.
+- **Favourites.** A star on the show screen, a marker on the library row, a
+  "Starred only" chip in the filter sheet, and the seed set behind the
+  "Favourites" discovery tab. A flag on `shows` rather than its own table,
+  because a favourite is by definition a followed show and two tables could
+  disagree about that; contrast `dismissed`, which is its own table precisely
+  because a dismissed show is one that is *not* followed.
+- **"More like this"** at the foot of the show screen (`ui/detail`). One
+  `/tv/{id}/recommendations` call for the show being looked at, in TMDB's own
+  order - the discovery ranking is agreement between several seeds, and with one
+  seed there is nothing to agree. Followed shows stay in the list wearing the
+  tick, unlike the discovery tabs, because this section answers "what is this
+  show like" rather than "what next". `ShowDetailViewModel` is scoped to the
+  navigation entry, so it belongs to the show on screen; it shares
+  `PreviewController`, so following and "not interested" behave exactly as they
+  do in discovery.
+- **The "Favourites" discovery tab** is "For you" seeded by the starred shows
+  alone. It has to be a separate tab rather than a weighting: the ranking is
+  agreement between seeds, so in a library of eighty shows whatever the bulk has
+  in common wins every tie and five favourites change nothing. Each seeded tab
+  keeps its own ranked pool and page; a dismissal sweeps both, since it is about
+  the show and not the tab it was seen on.
 
-Four things that are not obvious from the code:
+Five things that are not obvious from the code:
 
 - A ViewModel here can be unit-tested because `ApiKeySource` and
   `DiscoverLibrary` (`data/Sources.kt`) exist, and because `TmdbClient` takes
@@ -85,6 +110,8 @@ Four things that are not obvious from the code:
   clean. `ShowDaoTest` constructs `ShowEntity` exhaustively, so every added
   column breaks it. Run `:app:assembleDebugAndroidTest` before pushing; it needs
   no device, unlike `connectedDebugAndroidTest`.
+- `DiscoverTab` is declared in the order the tabs are drawn, because `TabRow`
+  reads the ordinal. Reordering the enum moves the tabs on screen.
 - **`LibraryViewModel.BACKFILL_VERSION` needs bumping whenever a migration adds
   a column TMDB is the source of.** It is what makes the app refresh once on the
   next open instead of waiting up to six hours for the library to go stale, so
