@@ -202,11 +202,12 @@ class LibraryExportTest {
     }
 
     @Test
-    fun `writes an empty library without failing, even though it will not import`() {
-        // Exporting nothing is legal; importing nothing is refused, because an empty file
-        // is far more likely to be a mistake than an intention.
+    fun `an empty library round trips, rather than writing a file it cannot read`() {
         val text = buildExport(emptyList(), null, now)
         assertTrue(text.contains("\"shows\""))
-        assertTrue(parseExport(text) is ImportResult.Failure)
+
+        val result = parseExport(text)
+        assertTrue(result is ImportResult.Success)
+        assertTrue((result as ImportResult.Success).shows.isEmpty())
     }
 }

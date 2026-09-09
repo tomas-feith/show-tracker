@@ -128,6 +128,13 @@ Five things that are not obvious from the code:
   no device, unlike `connectedDebugAndroidTest`.
 - `DiscoverTab` is declared in the order the tabs are drawn, because `TabRow`
   reads the ordinal. Reordering the enum moves the tabs on screen.
+- **What a refresh may conclude from its own outcome lives in
+  `ui/RefreshPolicy.kt`,** not in either caller. The in-app refresh and
+  `RefreshWorker` both record two markers, and they had drifted: the worker wrote
+  both unconditionally. `reachedTmdb` gates `lastCheckedAt` - a refresh where
+  every show failed has checked nothing, and stamping it anyway made the app
+  refuse to try again for six hours, with no manual refresh anywhere to override
+  it. `backfillLanded` gates the version below.
 - **`LibraryViewModel.BACKFILL_VERSION` needs bumping whenever a migration adds
   a column TMDB is the source of.** It is what makes the app refresh once on the
   next open instead of waiting up to six hours for the library to go stale, so
@@ -135,7 +142,7 @@ Five things that are not obvious from the code:
   to see it. It is deliberately not `ShowDatabase.VERSION`: a migration that
   adds something the user owns rather than something TMDB sends - `dismissed.name`
   was one - needs no refetch. The value is recorded in `Settings` after a refresh
-  that lost nothing, rather than inferred from the rows: "every show has no
+  that lost nothing to a transient failure, rather than inferred from the rows: "every show has no
   genres" cannot tell a library that has not refreshed yet from one TMDB has no
   genres for, and the second re-refreshed on every app open, for ever.
 

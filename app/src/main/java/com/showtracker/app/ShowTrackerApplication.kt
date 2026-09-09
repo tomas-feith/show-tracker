@@ -27,8 +27,12 @@ class AppContainer(
     context: Context,
 ) {
     /**
-     * Application context, kept for the pieces that schedule work rather than talk to a
-     * database. Held as `applicationContext` explicitly so nothing can pin an activity.
+     * The context everything here is built from.
+     *
+     * Held as `applicationContext` explicitly so nothing can pin an activity, and used by
+     * every member below rather than by only the ones that schedule work: the container
+     * outlives any activity, so a member that captured the constructor argument instead
+     * would defeat the field whose whole purpose is to prevent that.
      */
     val appContext: Context = context.applicationContext
 
@@ -36,13 +40,13 @@ class AppContainer(
 
     val tmdb: TmdbClient by lazy { TmdbClient(http) }
 
-    val settings: Settings by lazy { Settings(context) }
+    val settings: Settings by lazy { Settings(appContext) }
 
     val library: LibraryRepository by lazy {
-        LibraryRepository(ShowDatabase.get(context).showDao())
+        LibraryRepository(ShowDatabase.get(appContext).showDao())
     }
 
-    val backups: BackupFolder by lazy { BackupFolder(context) }
+    val backups: BackupFolder by lazy { BackupFolder(appContext) }
 
     val backupSchedule: BackupSchedule by lazy { BackupSchedule(appContext) }
 }

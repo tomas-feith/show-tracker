@@ -11,12 +11,22 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ShowDao {
+    /**
+     * Ordered by id, which is arbitrary but total.
+     *
+     * SQLite leaves the order of an unordered scan unspecified. Every list the user sees is
+     * sorted afterwards and ends at the name comparator, so the screen was never at risk -
+     * but the discovery seeds are cut at a limit after a stable sort on `addedAt`, and ties
+     * there fell through to whatever order the rows arrived in. An imported file can leave
+     * every show tied, since `addedAt` defaults to "", and which shows then seeded "For
+     * you" could differ between two loads of the same library.
+     */
     @Transaction
-    @Query("SELECT * FROM shows")
+    @Query("SELECT * FROM shows ORDER BY id")
     fun observeAll(): Flow<List<ShowWithSeasons>>
 
     @Transaction
-    @Query("SELECT * FROM shows")
+    @Query("SELECT * FROM shows ORDER BY id")
     suspend fun getAll(): List<ShowWithSeasons>
 
     @Transaction

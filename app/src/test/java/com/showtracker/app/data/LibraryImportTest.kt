@@ -148,9 +148,13 @@ class LibraryImportTest {
     }
 
     @Test
-    fun `refuses an export with no shows`() {
+    fun `reads an export with no shows as an empty library`() {
+        // Stamped correctly and structurally sound: it is a library that happens to be
+        // empty, which is a thing this app can produce and so has to be able to read back.
         val empty = """{"format":"showtracker-export","version":1,"shows":[]}"""
-        assertTrue(parseExport(empty) is ImportResult.Failure)
+        val result = parseExport(empty)
+        assertTrue(result is ImportResult.Success)
+        assertTrue((result as ImportResult.Success).shows.isEmpty())
     }
 
     @Test

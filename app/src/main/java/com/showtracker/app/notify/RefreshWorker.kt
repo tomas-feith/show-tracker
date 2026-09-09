@@ -13,6 +13,8 @@ import com.showtracker.app.ShowTrackerApplication
 import com.showtracker.app.domain.ShowFetcher
 import com.showtracker.app.domain.refreshShows
 import com.showtracker.app.ui.LibraryViewModel
+import com.showtracker.app.ui.backfillLanded
+import com.showtracker.app.ui.reachedTmdb
 import kotlinx.coroutines.CancellationException
 import java.time.Instant
 import java.time.LocalDate
@@ -46,11 +48,18 @@ class RefreshWorker(
                 refreshShows(fetcher, shows, Instant.now(), LocalDate.now())
 
             container.library.saveRefreshed(outcome.shows)
-            container.settings.setLastCheckedAt(Instant.now().toString())
-            // This refresh fills the columns an upgrade added just as the in-app one does,
-            // so it records the same marker. Without it a background refresh was followed
-            // by a redundant full refetch the next time the app was opened.
-            container.settings.setBackfilledVersion(LibraryViewModel.BACKFILL_VERSION)
+
+            // Both markers on the same terms as the in-app refresh, through the shared
+            // rules in `ui/RefreshPolicy`. This used to record them unconditionally, which
+            // was wrong in both directions: a run where every show failed left the library
+            // looking freshly checked, and one that lost half of them to a rate limit still
+            // claimed the columns an upgrade added had been filled in.
+            if (outcome.reachedTmdb) {
+                container.settings.setLastCheckedAt(Instant.now().toString())
+            }
+            if (outcome.backfillLanded) {
+                container.settings.setBackfilledVersion(LibraryViewModel.BACKFILL_VERSION)
+            }
             notifyDiscoveries(applicationContext, outcome.discoveries)
 
             // Per-show failures are already absorbed by refreshShows, which keeps the

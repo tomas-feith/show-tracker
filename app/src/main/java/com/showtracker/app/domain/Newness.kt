@@ -321,17 +321,15 @@ enum class LibrarySort(
 /**
  * Aired seasons the user has not finished, including one they are partway through.
  *
- * Counted against the watermark rather than from it, so a library where someone skipped
- * ahead to the newest season still reports the older ones as waiting. Specials are excluded
- * by [realSeasons]: nobody's backlog is a season 0.
+ * The same question as [seasonsBehind] asked from the sort's side, and now the same
+ * function: it had its own copy of the count, differing only by a [realSeasons] filter that
+ * [hasAired] already implies. Two copies of one rule agreeing by coincidence is how the row
+ * and the order it is sorted by come to disagree.
  */
 fun seasonsRemaining(
     show: TrackedShow,
     today: LocalDate,
-): Int =
-    realSeasons(show.seasons).count {
-        hasAired(it, today) && it.seasonNumber > show.watchedThroughSeason
-    }
+): Int = seasonsBehind(show, today)
 
 /**
  * Order the library.
@@ -512,7 +510,8 @@ fun describeDays(
                 n == 1 -> "tomorrow"
                 n < DAYS_BEFORE_MONTHS -> "in $n days"
                 n < DAYS_PER_YEAR -> "in ${monthsIn(n)} months"
-                else -> "over a year away"
+                n < 2 * DAYS_PER_YEAR -> "over a year away"
+                else -> "in ${n / DAYS_PER_YEAR} years"
             }
         }
     }

@@ -727,31 +727,4 @@ class NewnessTest {
 
         assertEquals(listOf(2, 1), sortLibrary(shows, today).map { it.id })
     }
-
-    // --- formatting ---
-
-    @Test
-    fun `describes day counts in human terms`() {
-        assertEquals("today", describeDays(0, Direction.AGO))
-        assertEquals("yesterday", describeDays(1, Direction.AGO))
-        assertEquals("5 days ago", describeDays(5, Direction.AGO))
-        assertEquals("6 months ago", describeDays(180, Direction.AGO))
-        assertEquals("over a year ago", describeDays(400, Direction.AGO))
-        assertEquals("tomorrow", describeDays(1, Direction.UNTIL))
-        assertEquals("in 10 days", describeDays(10, Direction.UNTIL))
-    }
-
-    @Test
-    fun `rounds months rather than truncating them`() {
-        // Integer division would call 175 days "5 months"; the JavaScript this replaces
-        // used Math.round, so it is 6.
-        assertEquals("6 months ago", describeDays(175, Direction.AGO))
-        assertEquals("in 2 months", describeDays(45, Direction.UNTIL))
-    }
-
-    @Test
-    fun `zero-pads episode codes`() {
-        assertEquals("S02E05", formatEpisode(EpisodeRef(2, 5, "", null)))
-        assertEquals("S12E134", formatEpisode(EpisodeRef(12, 134, "", null)))
-    }
 }

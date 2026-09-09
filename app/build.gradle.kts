@@ -36,8 +36,12 @@ android {
         // and 26 is what the sibling habit_tracker targets.
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1"
+        // Bumped with every build that goes on the phone. This app is sideloaded, so the
+        // version is the only thing that says which build is installed - it sat at 1
+        // through every release since the cutover, and telling two of them apart meant
+        // reading install timestamps out of `dumpsys`.
+        versionCode = 2
+        versionName = "0.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -58,10 +62,12 @@ android {
 
     buildTypes {
         debug {
-            // Until the port is finished the React Native app is still the one in daily
-            // use on the phone, holding the only live copy of the library. A distinct
-            // applicationId lets this build sit beside it instead of demanding to replace
-            // it, which under a different signing key would mean uninstalling first.
+            // The release install on the phone holds the only live copy of the library:
+            // there is no server, and an uninstall erases it. A distinct applicationId
+            // lets a debug build be tried beside it, with its own database, rather than
+            // replacing it. (This said the React Native build was the one in daily use
+            // until 2026-09-09; the cutover happened on 2026-08-15, and the reason the
+            // suffix is here has outlived the reason it was added.)
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
 

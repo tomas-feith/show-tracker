@@ -156,9 +156,10 @@ fun parseExport(text: String): ImportResult {
         )
     }
 
-    if (payload.shows.isEmpty()) {
-        return ImportResult.Failure("That export contains no shows.")
-    }
+    // An empty library is a library. The writer produces such a file happily, and refusing
+    // to read one back meant a valid, correctly stamped export of a library the user had
+    // just emptied was the one file this app would not accept. The caller confirms before
+    // replacing anything, and says how many shows arrived.
 
     // Last one wins on a duplicate id, matching how the library itself is keyed. A file
     // with duplicates is malformed, but dropping the extras beats a crash on insert.

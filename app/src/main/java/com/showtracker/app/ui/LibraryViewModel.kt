@@ -22,7 +22,6 @@ import com.showtracker.app.domain.latestAiredSeason
 import com.showtracker.app.domain.refreshShows
 import com.showtracker.app.domain.withDetail
 import com.showtracker.app.network.TmdbClient
-import com.showtracker.app.network.TmdbException
 import com.showtracker.app.notify.BackupSchedule
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,7 +31,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -140,12 +138,15 @@ class LibraryViewModel(
             val ready = state.first { it.ready }
             if (ready.apiKey == null) return@launch
 
-            val last =
-                ready.lastCheckedAt?.let { runCatching { Instant.parse(it) }.getOrNull() }
-            val stale = last == null || Duration.between(last, now) > STALE_AFTER
-            val backfilled = settings.backfilledVersion.first()
+            val shouldRefresh =
+                shouldRefresh(
+                    lastCheckedAt = ready.lastCheckedAt,
+                    backfilledVersion = settings.backfilledVersion.first(),
+                    backfillVersion = BACKFILL_VERSION,
+                    now = now,
+                )
 
-            if (stale || backfilled < BACKFILL_VERSION) refresh(now)
+            if (shouldRefresh) refresh(now)
         }
     }
 
@@ -163,10 +164,12 @@ class LibraryViewModel(
                 catchingUserFacing {
                     val outcome = refreshShows(fetcher, library.all(), now, today)
                     library.saveRefreshed(outcome.shows)
-                    settings.setLastCheckedAt(now.toString())
-                    if (!outcome.failures.values.any(::isTransient)) {
-                        settings.setBackfilledVersion(BACKFILL_VERSION)
-                    }
+                    // Only once something came back. A refresh where every show failed has
+                    // checked nothing, and recording it as a check would make the app
+                    // refuse to try again until the staleness window had passed - see
+                    // RefreshOutcome.reachedTmdb.
+                    if (outcome.reachedTmdb) settings.setLastCheckedAt(now.toString())
+                    if (outcome.backfillLanded) settings.setBackfilledVersion(BACKFILL_VERSION)
 
                     if (outcome.failures.isNotEmpty()) {
                         val first = outcome.failures.values.first()
@@ -404,23 +407,6 @@ class LibraryViewModel(
 
     companion object {
         private const val STOP_TIMEOUT_MS = 5_000L
-        private val STALE_AFTER: Duration = Duration.ofHours(6)
-
-        /**
-         * Whether a refresh failure is worth waiting out before calling the backfill done.
-         *
-         * Only connectivity and rate limiting are: they are about the whole library rather
-         * than one show, and the next attempt is likely to succeed. A per-show failure is
-         * not - TMDB does 404 an id that was merged into another, and that show will fail
-         * every time. Treating those as unfinished pinned the app into refetching the
-         * entire library on every foreground resume, for ever, which is the same failure
-         * the recorded version was introduced to prevent.
-         *
-         * The show itself loses nothing by this: `refreshShows` keeps its previous data,
-         * and it is retried on the ordinary six-hourly refresh like everything else.
-         */
-        private fun isTransient(failure: Throwable): Boolean =
-            failure is TmdbException.Offline || failure is TmdbException.RateLimited
 
         /**
          * The schema version whose columns a refresh is known to fill in.

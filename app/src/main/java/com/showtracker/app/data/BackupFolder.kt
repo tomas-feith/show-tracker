@@ -25,9 +25,16 @@ class BackupFolder(
     /**
      * Write [json] as a new dated file, then delete the oldest beyond [BACKUPS_KEPT].
      *
-     * Returns the name written. Throws if the folder is gone or the grant was revoked,
-     * which the caller reports rather than swallowing - a backup that has quietly stopped
-     * working is worse than no backup, because it is trusted.
+     * Returns the name the provider actually gave the file, which is not always the one it
+     * was asked for: SAF deduplicates a collision into "... (1).json". Reporting the
+     * requested name would name a file that is not there, and - because
+     * [isBackupFileName] tests an exact length - a deduplicated one is invisible to
+     * retention as well, so it would sit in the user's folder for ever. Reading the name
+     * back settles both.
+     *
+     * Throws if the folder is gone or the grant was revoked, which the caller reports
+     * rather than swallowing - a backup that has quietly stopped working is worse than no
+     * backup, because it is trusted.
      */
     suspend fun write(
         tree: Uri,
@@ -47,9 +54,32 @@ class BackupFolder(
                     .write(json.toByteArray(Charsets.UTF_8))
             }
 
+            // After the write, so a provider that only settles the name on creation has
+            // already done so. Falls back to the requested name: failing a backup that is
+            // on disk over a cosmetic lookup would be the wrong way round.
+            val written = displayNameOf(resolver, file) ?: name
+
             prune(resolver, tree)
-            name
+            written
         }
+
+    /** The display name of one document, or null if it cannot be read. */
+    private fun displayNameOf(
+        resolver: ContentResolver,
+        document: Uri,
+    ): String? =
+        runCatching {
+            resolver
+                .query(
+                    document,
+                    arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                    null,
+                    null,
+                    null,
+                ).use { cursor ->
+                    if (cursor != null && cursor.moveToFirst()) cursor.getString(0) else null
+                }
+        }.getOrNull()
 
     /**
      * The folder's name as its provider reports it.

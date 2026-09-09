@@ -65,6 +65,21 @@ private suspend fun writeText(
 }
 
 /**
+ * What an import that worked has to say for itself.
+ *
+ * Zero is a real answer and gets its own sentence: an empty export is a valid file, and
+ * reporting the wipe it just performed as "Imported 0 shows." would be technically true and
+ * useless. Out here rather than inline in the dialog's callback, which was already the
+ * longest thing on the screen.
+ */
+private fun describeImport(count: Int): String =
+    when (count) {
+        0 -> "That export was empty. Your library is now empty too."
+        1 -> "Imported 1 show."
+        else -> "Imported $count shows."
+    }
+
+/**
  * Export and import, through the system file picker.
  *
  * Both go through the Storage Access Framework, so the app needs no storage permission and
@@ -178,9 +193,7 @@ fun DataSection(viewModel: LibraryViewModel) {
                                 when (result) {
                                     is ImportResult.Success -> {
                                         failed = false
-                                        message =
-                                            "Imported ${result.shows.size} " +
-                                            if (result.shows.size == 1) "show." else "shows."
+                                        message = describeImport(result.shows.size)
                                     }
 
                                     is ImportResult.Failure -> {
