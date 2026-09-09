@@ -299,6 +299,48 @@ class DiscoverViewModelTest {
         }
 
     @Test
+    fun `every starred show seeds the favourites tab, past the for-you cap`() =
+        runTest(dispatcher) {
+            // The cap exists to stop a big library opening a request per show for a list
+            // nobody scrolls to the end of. The star is the user naming the seeds, so it
+            // does not apply here - and because the ranking is agreement between seeds,
+            // silently dropping some of them would reorder the whole list, not just
+            // shorten it.
+            val starred = DiscoverViewModel.MAX_SEEDS + 5
+            server.dispatcher =
+                object : Dispatcher() {
+                    override fun dispatch(request: RecordedRequest): MockResponse =
+                        MockResponse().setBody(recommendations(10, 11))
+                }
+
+            val library =
+                FakeLibrary(
+                    // Ids well clear of the suggested ones: a followed show is excluded
+                    // from its own tab, so an overlap would empty the list.
+                    (101..100 + starred).map { id ->
+                        TrackedShow(
+                            id = id,
+                            name = "Show $id",
+                            addedAt = "2026-01-01",
+                            favourite = true,
+                        )
+                    },
+                )
+            val model = viewModel(library)
+            model.load(DiscoverTab.FAVOURITES)
+            advanceUntilIdle()
+
+            assertEquals("one request per starred show", starred, server.requestCount)
+            // Every seed agreed, so both suggestions carry all of them as the reason.
+            assertEquals(
+                starred,
+                model.state.value.favourites.items
+                    .first()
+                    .seedCount,
+            )
+        }
+
+    @Test
     fun `a library with nothing starred asks TMDB nothing`() =
         runTest(dispatcher) {
             val model = viewModel(FakeLibrary(listOf(show(1), show(2))))

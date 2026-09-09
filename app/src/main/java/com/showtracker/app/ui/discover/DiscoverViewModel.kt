@@ -241,19 +241,28 @@ class DiscoverViewModel(
     /**
      * Which library shows seed [tab].
      *
-     * Newest first, then capped. This is one request per seed, and a large library would
-     * otherwise open a hundred of them for a list nobody scrolls to the end of. What was
-     * added most recently is also the best stand-in available for what the user is
-     * interested in now.
+     * Newest first. "For you" is then capped: it is one request per seed, and a large
+     * library would otherwise open a hundred of them for a list nobody scrolls to the end
+     * of, while what was added most recently is the best stand-in available for what the
+     * user is interested in now.
+     *
+     * "Favourites" is deliberately uncapped. The star is the user saying which shows this
+     * tab is about, so dropping some of them answers a question nobody asked - and because
+     * the ranking is agreement between seeds, a missing seed does not merely shorten the
+     * list, it changes the order of the whole of it. A library with more than [MAX_SEEDS]
+     * starred shows is also a library that has been curated deliberately, so the cost of
+     * the extra requests is the one thing the user has actually asked to spend.
      */
     private fun seedsFor(
         tab: DiscoverTab,
         shows: List<TrackedShow>,
-    ): List<TrackedShow> =
-        shows
-            .filter { tab != DiscoverTab.FAVOURITES || it.favourite }
-            .sortedByDescending { it.addedAt }
-            .take(MAX_SEEDS)
+    ): List<TrackedShow> {
+        val ordered =
+            shows
+                .filter { tab != DiscoverTab.FAVOURITES || it.favourite }
+                .sortedByDescending { it.addedAt }
+        return if (tab == DiscoverTab.FAVOURITES) ordered else ordered.take(MAX_SEEDS)
+    }
 
     private suspend fun loadSeeded(
         key: String,
@@ -420,7 +429,7 @@ class DiscoverViewModel(
         }
 
     companion object {
-        /** Ceiling on how many shows seed one tab; see [seedsFor]. */
+        /** Ceiling on how many shows seed "For you"; see [seedsFor]. */
         const val MAX_SEEDS = 40
 
         private fun candidatesFor(
