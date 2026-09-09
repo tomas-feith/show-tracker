@@ -22,6 +22,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -218,9 +219,9 @@ class DiscoverViewModelTest {
         }
 
     @Test
-    fun `refreshing pages through the pool without asking TMDB again`() =
+    fun `show more pages through the pool without asking TMDB again`() =
         runTest(dispatcher) {
-            // Two pages' worth, so a refresh has somewhere to go.
+            // Two pages' worth, so there is somewhere to go.
             val ids = (100 until 100 + 45).toList()
             server.enqueue(MockResponse().setBody(recommendations(*ids.toIntArray())))
 
@@ -235,7 +236,7 @@ class DiscoverViewModelTest {
             assertTrue(model.state.value.moreSuggestions)
 
             val requestsBefore = server.requestCount
-            model.refresh(DiscoverTab.FOR_YOU)
+            model.showMore(DiscoverTab.FOR_YOU)
             advanceUntilIdle()
 
             val secondPage =
@@ -248,8 +249,10 @@ class DiscoverViewModelTest {
         }
 
     @Test
-    fun `refreshing past the end of the pool fetches again`() =
+    fun `show more does nothing once the pool is spent`() =
         runTest(dispatcher) {
+            // A single page's worth: there is no second page to walk to, and the button
+            // that would ask for one is disabled by the same flag asserted here.
             server.enqueue(MockResponse().setBody(recommendations(10, 11)))
 
             val model = viewModel(FakeLibrary(listOf(show(1))))
@@ -257,16 +260,61 @@ class DiscoverViewModelTest {
             advanceUntilIdle()
 
             val requestsBefore = server.requestCount
-            server.enqueue(MockResponse().setBody(recommendations(20, 21)))
-            model.refresh(DiscoverTab.FOR_YOU)
+            assertFalse(model.state.value.moreSuggestions)
+            model.showMore(DiscoverTab.FOR_YOU)
             advanceUntilIdle()
 
-            assertEquals(requestsBefore + 1, server.requestCount)
+            assertEquals("show more never asks TMDB", requestsBefore, server.requestCount)
             assertEquals(
-                listOf(20, 21),
+                listOf(10, 11),
                 model.state.value.forYou.items
                     .map { it.show.id },
             )
+        }
+
+    @Test
+    fun `refreshing re-asks TMDB and starts again from the top`() =
+        runTest(dispatcher) {
+            // The ranking is a pure function of the seeds and their lists, so refreshing
+            // an unchanged library must give back the list it gave before - including
+            // after paging away from it. A refresh that resumed mid-pool would look like
+            // the re-rolled list the ranking exists to avoid.
+            val ids = (100 until 100 + 45).toList()
+            val body = recommendations(*ids.toIntArray())
+            server.dispatcher =
+                object : Dispatcher() {
+                    override fun dispatch(request: RecordedRequest): MockResponse =
+                        MockResponse().setBody(body)
+                }
+
+            val model = viewModel(FakeLibrary(listOf(show(1))))
+            model.load(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+
+            val firstPage =
+                model.state.value.forYou.items
+                    .map { it.show.id }
+
+            model.showMore(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+            assertNotEquals(
+                firstPage,
+                model.state.value.forYou.items
+                    .map { it.show.id },
+            )
+
+            val requestsBefore = server.requestCount
+            model.refresh(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+
+            assertEquals("refresh asks again", requestsBefore + 1, server.requestCount)
+            assertEquals(
+                "and lands back on the same first page",
+                firstPage,
+                model.state.value.forYou.items
+                    .map { it.show.id },
+            )
+            assertTrue(model.state.value.moreSuggestions)
         }
 
     @Test
@@ -338,6 +386,82 @@ class DiscoverViewModelTest {
                     .first()
                     .seedCount,
             )
+        }
+
+    @Test
+    fun `a seed that fails once is retried rather than dropped`() =
+        runTest(dispatcher) {
+            // Nearly every failure here is transient, and a dropped seed does not shorten
+            // the list, it reorders it: the ranking is agreement between seeds.
+            var calls = 0
+            server.dispatcher =
+                object : Dispatcher() {
+                    override fun dispatch(request: RecordedRequest): MockResponse {
+                        calls += 1
+                        return if (calls == 1) {
+                            MockResponse().setResponseCode(503)
+                        } else {
+                            MockResponse().setBody(recommendations(10, 11))
+                        }
+                    }
+                }
+
+            val model = viewModel(FakeLibrary(listOf(show(1, favourite = true))))
+            model.load(DiscoverTab.FAVOURITES)
+            advanceUntilIdle()
+
+            val tab = model.state.value.favourites
+            assertEquals("the failed seed is asked again", 2, calls)
+            assertEquals(listOf(10, 11), tab.items.map { it.show.id })
+            // A retry that succeeded is not worth a caveat.
+            assertNull(tab.note)
+            assertNull(tab.error)
+        }
+
+    @Test
+    fun `a seed still failing keeps the previous suggestions rather than reordering them`() =
+        runTest(dispatcher) {
+            // Seed 1 always answers; seed 2 never does. Keyed on the path, because the two
+            // requests are in flight together and their order is not ours to predict.
+            server.dispatcher =
+                object : Dispatcher() {
+                    override fun dispatch(request: RecordedRequest): MockResponse =
+                        if (request.path.orEmpty().contains("/tv/2/")) {
+                            MockResponse().setResponseCode(503)
+                        } else {
+                            MockResponse().setBody(recommendations(10, 11))
+                        }
+                }
+
+            val library =
+                FakeLibrary(listOf(show(1, favourite = true), show(2, favourite = true)))
+            val model = viewModel(library)
+            model.load(DiscoverTab.FAVOURITES)
+            advanceUntilIdle()
+
+            val first = model.state.value.favourites
+            assertEquals(listOf(10, 11), first.items.map { it.show.id })
+            // Built from one seed of two, and it says so rather than looking complete.
+            assertNotNull("a partial first list must admit it", first.note)
+
+            // Now the same load again, with seed 2 still broken. The list on screen was
+            // ranked from a set of seeds, so re-ranking from a different set would rewrite
+            // it with something no better that looks just as authoritative.
+            model.load(DiscoverTab.FAVOURITES, force = true)
+            advanceUntilIdle()
+
+            val second = model.state.value.favourites
+            assertEquals(
+                "the visible list is untouched",
+                first.items.map { it.show.id },
+                second.items.map { it.show.id },
+            )
+            assertTrue(
+                "and the tab says why it did not change",
+                second.note.orEmpty().startsWith("Kept the previous suggestions"),
+            )
+            assertNull(second.error)
+            assertTrue(second.loaded)
         }
 
     @Test

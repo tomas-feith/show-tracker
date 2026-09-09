@@ -18,6 +18,7 @@ import com.showtracker.app.ui.catchingUserFacing
 import com.showtracker.app.ui.components.Preview
 import com.showtracker.app.ui.components.PreviewController
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -188,7 +189,7 @@ class DiscoverViewModel(
     }
 
     /**
-     * What refresh does: show the next page of a seeded tab, or fetch afresh once spent.
+     * Show the next screenful of an already-ranked pool. No network, no re-ranking.
      *
      * Paging rather than re-rolling which shows are used as seeds. Dropping seeds at random
      * would certainly change the answer, but it changes it by destroying the signal the
@@ -197,10 +198,26 @@ class DiscoverViewModel(
      * ranked once answers the request actually being made, "show me something else", keeps
      * the good suggestions in their right order, and costs no network at all.
      *
-     * Trending has nothing to page through, so there it is a plain re-fetch.
+     * This used to be what the refresh button did once, falling through to a re-fetch when
+     * the pool ran out. One button doing both was indistinguishable from a broken one: a
+     * new set of thirty shows on every tap looks like a list being re-rolled at random,
+     * which is exactly what the ranking is built not to do. The two are separate buttons
+     * now, each doing only the thing it is named after. [DiscoverUiState.moreSuggestions]
+     * says whether this one has anything left to show.
+     */
+    fun showMore(tab: DiscoverTab = _state.value.tab) {
+        if (!tab.seeded) return
+        nextPage(tab)
+    }
+
+    /**
+     * Ask TMDB again and start from the top.
+     *
+     * Deliberately back to page 1, so the same library gives the same list: the ranking is
+     * a pure function of the seeds and their lists, and a user who refreshes twice without
+     * touching their library should see that.
      */
     fun refresh(tab: DiscoverTab = _state.value.tab) {
-        if (tab.seeded && nextPage(tab)) return
         load(tab, force = true)
     }
 
@@ -274,7 +291,7 @@ class DiscoverViewModel(
 
         val seeds = seedsFor(tab, shows)
 
-        val fetched = tmdb.fetchRecommendations(key, seeds.map { it.id })
+        val fetched = retryingFailures(key, seeds.map { it.id })
         // Built by walking the seeds rather than the response map, so the ranking's
         // library-order tiebreak is the user's order and not a hash order.
         val seeded =
@@ -291,6 +308,17 @@ class DiscoverViewModel(
             throw fetched.values.firstNotNullOf { it.exceptionOrNull() }
         }
 
+        // A seed that is still missing after the retry is not a slightly shorter list, it
+        // is a different one: the ranking is agreement between seeds, so dropping one
+        // restates the count behind every candidate and reorders the whole pool. Ranking
+        // over the partial set would therefore overwrite a good list with a worse one that
+        // looks exactly as authoritative, which is the failure this guard exists to stop.
+        // Better to keep what is on screen and say why it did not change.
+        if (failures > 0 && pool(tab).candidates.isNotEmpty()) {
+            setStatus(tab) { it.copy(loaded = true, note = describeKept(failures)) }
+            return
+        }
+
         // Followed shows are excluded from both seeded tabs, favourites included: a
         // starred show seeding the list is the reason a suggestion is there, and offering
         // it back as the suggestion would be the tab recommending the library to itself.
@@ -302,7 +330,33 @@ class DiscoverViewModel(
             )
         pool(tab).page = 0
         showPage(tab)
-        setStatus(tab) { it.copy(note = describeFailures(failures)) }
+        // Nothing was kept back, so this is a first list built from an incomplete set. It
+        // is shown - a partial list beats a blank tab - but it says so, because the order
+        // is not the one the full library would have produced.
+        setStatus(tab) { it.copy(note = describePartial(failures)) }
+    }
+
+    /**
+     * Ask for every seed, then ask once more for the ones that failed.
+     *
+     * Nearly every failure here is transient - a 429 from asking for forty lists at once,
+     * or a phone that lost the network for a moment - and one retry turns most of them
+     * into successes rather than into a caveat the user has to read. The delay is there
+     * because retrying a rate limit immediately is how a rate limit is earned again.
+     *
+     * Whatever the second attempt returns is what counts, failure included: two failures
+     * in a row is the honest answer, and the caller is about to act on it.
+     */
+    private suspend fun retryingFailures(
+        key: String,
+        ids: List<Int>,
+    ): Map<Int, Result<List<SearchResult>>> {
+        val first = tmdb.fetchRecommendations(key, ids)
+        val failed = first.filterValues { it.isFailure }.keys
+        if (failed.isEmpty()) return first
+
+        delay(RETRY_DELAY_MS)
+        return first + tmdb.fetchRecommendations(key, failed.toList())
     }
 
     private suspend fun loadTrending(key: String) {
@@ -432,6 +486,9 @@ class DiscoverViewModel(
         /** Ceiling on how many shows seed "For you"; see [seedsFor]. */
         const val MAX_SEEDS = 40
 
+        /** How long to wait before re-asking for the seeds that failed; see [retryingFailures]. */
+        const val RETRY_DELAY_MS = 400L
+
         private fun candidatesFor(
             state: DiscoverUiState,
             tab: DiscoverTab,
@@ -456,11 +513,20 @@ class DiscoverViewModel(
                 DiscoverTab.TRENDING -> state
             }
 
-        private fun describeFailures(failures: Int): String? =
+        /** What the tab says when it showed a list built from an incomplete set of seeds. */
+        private fun describePartial(failures: Int): String? =
             when (failures) {
                 0 -> null
-                1 -> "One show's suggestions could not be loaded."
-                else -> "$failures shows' suggestions could not be loaded."
+                1 -> "Incomplete: one show's suggestions could not be loaded."
+                else -> "Incomplete: $failures shows' suggestions could not be loaded."
+            }
+
+        /** What it says when it declined to replace a good list with a partial one. */
+        private fun describeKept(failures: Int): String =
+            if (failures == 1) {
+                "Kept the previous suggestions: one show's list could not be loaded."
+            } else {
+                "Kept the previous suggestions: $failures shows' lists could not be loaded."
             }
 
         fun factory(container: AppContainer): ViewModelProvider.Factory =

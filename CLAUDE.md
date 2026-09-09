@@ -43,10 +43,19 @@ Built since, beyond the original phases:
   recommender is deliberately not used - it wants a TMDB login and the user's
   ratings on TMDB's servers, and this app has no account. "Trending" is the
   plain `/trending/tv/week` list, kept separate so a suggestion claiming to be
-  about your library always is. Refresh pages down the ranked pool rather than
-  re-rolling seeds, which would destroy the agreement signal the ranking rests
-  on. "Not interested" hides a show for good; Settings lists what is hidden and
-  offers it back.
+  about your library always is. Neither button re-rolls the seeds, which would
+  destroy the agreement signal the ranking rests on: "Show more" pages down the
+  ranked pool for nothing, and refresh re-asks TMDB and returns to page 1, so an
+  unchanged library gives back the same list. They were one button until
+  2026-09-09, and it read as a list being re-rolled at random - a new screenful
+  on every tap is indistinguishable from a broken ranking. A seed whose request
+  fails is retried once; if it still fails and a ranked pool already exists, the
+  pool is kept rather than re-ranked over the seeds that answered, because a
+  missing seed reorders the whole list rather than shortening it. "Not
+  interested" hides a show for good; Settings lists what is hidden and offers it
+  back. The favourites tab is seeded by every starred show - `MAX_SEEDS` caps
+  "For you" only, since there the seeds are the whole library rather than the
+  user's own choice.
 - **Backups.** Two independent mechanisms, and they answer different questions.
   Android Auto Backup covers a lost phone; `LibraryBackupAgent` checkpoints the
   WAL first, without which the cloud copy is the database as of the last

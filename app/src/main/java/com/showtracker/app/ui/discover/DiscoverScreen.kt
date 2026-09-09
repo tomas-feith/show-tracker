@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -90,15 +91,24 @@ fun DiscoverScreen(
                     }
                 },
                 actions = {
+                    // Two buttons, because they answer different questions and one button
+                    // doing both read as a list being re-rolled at random on every tap.
+                    // "Show more" walks the ranked pool and costs nothing; refresh re-asks
+                    // TMDB and starts again from the top.
+                    IconButton(
+                        onClick = { viewModel.showMore() },
+                        enabled = state.moreSuggestions,
+                    ) {
+                        Icon(
+                            Icons.Default.ExpandMore,
+                            contentDescription = "Show more suggestions",
+                            tint = if (state.moreSuggestions) TextMuted else TextFaint,
+                        )
+                    }
                     IconButton(onClick = { viewModel.refresh() }) {
                         Icon(
                             Icons.Default.Refresh,
-                            contentDescription =
-                                if (state.moreSuggestions) {
-                                    "Show different suggestions"
-                                } else {
-                                    "Refresh suggestions"
-                                },
+                            contentDescription = "Refresh suggestions",
                             tint = TextMuted,
                         )
                     }
