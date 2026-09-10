@@ -40,8 +40,8 @@ android {
         // version is the only thing that says which build is installed - it sat at 1
         // through every release since the cutover, and telling two of them apart meant
         // reading install timestamps out of `dumpsys`.
-        versionCode = 2
-        versionName = "0.2"
+        versionCode = 3
+        versionName = "0.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
