@@ -43,12 +43,20 @@ Built since, beyond the original phases:
   recommender is deliberately not used - it wants a TMDB login and the user's
   ratings on TMDB's servers, and this app has no account. "Trending" is the
   plain `/trending/tv/week` list, kept separate so a suggestion claiming to be
-  about your library always is. Neither button re-rolls the seeds, which would
-  destroy the agreement signal the ranking rests on: "Show more" pages down the
-  ranked pool for nothing, and refresh re-asks TMDB and returns to page 1, so an
-  unchanged library gives back the same list. They were one button until
-  2026-09-09, and it read as a list being re-rolled at random - a new screenful
-  on every tap is indistinguishable from a broken ranking. A seed whose request
+  about your library always is. Two buttons, split on 2026-09-09 because one
+  doing both read as a list being re-rolled at random: "Show more" pages down the
+  ranked pool and costs nothing, and refresh re-asks TMDB and returns to page 1.
+  Refresh also **moves the seed window on** (2026-09-10): "For you" is capped at
+  `MAX_SEEDS`, and that cap used to mean the same forty shows for ever, so
+  refreshing re-asked the same question and got the same answer. Each load now
+  starts where the last ended and wraps, so a library of eighty is asked about in
+  two alternating halves and every show seeds eventually. A rotation, not a
+  random sample: the ranking is agreement between seeds, so a full batch is what
+  gives it something to agree about - sampling would thin the evidence on every
+  refresh. The cost is real - a show six of your library point at can be absent
+  next refresh if those six are in the other window - and it is why "the same
+  library gives the same list" now holds only at or under the cap, and for
+  "Favourites", which is uncapped and so never rotates. A seed whose request
   fails is retried once; if it still fails and a ranked pool already exists, the
   pool is kept rather than re-ranked over the seeds that answered, because a
   missing seed reorders the whole list rather than shortening it. "Not

@@ -140,6 +140,16 @@ class DiscoverViewModel(
         var page: Int = 0
     }
 
+    /**
+     * Where the next "For you" load starts in the library.
+     *
+     * Session state, not stored: it is a cursor into a list that changes as shows are
+     * followed and dropped, and carrying yesterday's position into a library that has moved
+     * under it would buy nothing. Starting from the newest shows on every cold start is
+     * also the right first answer.
+     */
+    private var seedOffset = 0
+
     /** One pool per seeded tab. Trending has none: it is a single list with no ranking. */
     private val pools =
         DiscoverTab.entries
@@ -211,11 +221,16 @@ class DiscoverViewModel(
     }
 
     /**
-     * Ask TMDB again and start from the top.
+     * Ask TMDB again, about a different part of the library, and start from the top.
      *
-     * Deliberately back to page 1, so the same library gives the same list: the ranking is
-     * a pure function of the seeds and their lists, and a user who refreshes twice without
-     * touching their library should see that.
+     * Always back to page 1: whatever the seeds were, the best of what they produced
+     * belongs at the top of the list, not wherever the previous window's paging had got to.
+     *
+     * What changes between two refreshes is the seed window - see [seedWindow]. For a
+     * library larger than [MAX_SEEDS] that means a genuinely different set of suggestions
+     * each time, cycling back round once the library has been covered. For one at or under
+     * the cap, and for "Favourites" at any size, the seeds cannot differ, so refreshing is
+     * still a deterministic re-ask that gives the same answer until the library changes.
      */
     fun refresh(tab: DiscoverTab = _state.value.tab) {
         load(tab, force = true)
@@ -256,29 +271,70 @@ class DiscoverViewModel(
     }
 
     /**
-     * Which library shows seed [tab].
+     * Every show eligible to seed [tab], newest first and uncapped.
      *
-     * Newest first. "For you" is then capped: it is one request per seed, and a large
-     * library would otherwise open a hundred of them for a list nobody scrolls to the end
-     * of, while what was added most recently is the best stand-in available for what the
-     * user is interested in now.
-     *
-     * "Favourites" is deliberately uncapped. The star is the user saying which shows this
-     * tab is about, so dropping some of them answers a question nobody asked - and because
-     * the ranking is agreement between seeds, a missing seed does not merely shorten the
-     * list, it changes the order of the whole of it. A library with more than [MAX_SEEDS]
-     * starred shows is also a library that has been curated deliberately, so the cost of
-     * the extra requests is the one thing the user has actually asked to spend.
+     * Newest first because what was added most recently is the best stand-in available for
+     * what the user is interested in now, and because the order has to be total: the window
+     * below cuts it at a fixed size, so a tie broken by the database's row order would move
+     * shows in and out of the seed set at random. `ShowDao` orders by id for the same
+     * reason.
      */
-    private fun seedsFor(
+    private fun eligibleSeeds(
         tab: DiscoverTab,
         shows: List<TrackedShow>,
+    ): List<TrackedShow> =
+        shows
+            .filter { tab != DiscoverTab.FAVOURITES || it.favourite }
+            .sortedByDescending { it.addedAt }
+
+    /**
+     * The [MAX_SEEDS] shows this load actually asks TMDB about.
+     *
+     * "For you" is capped because it is one request per seed and a large library would
+     * otherwise open a hundred of them for a list nobody scrolls to the end of. The cap
+     * used to mean the same forty shows for ever, so refreshing re-asked TMDB the same
+     * question and re-ranked to the same answer - correct, and useless as a way of seeing
+     * something else. The window now walks: each load starts where the last one ended and
+     * wraps, so a library of eighty is asked about in two halves, alternating.
+     *
+     * A rotation rather than a random sample of forty, because the ranking is agreement
+     * between seeds and a full batch is what gives it something to agree about. Sampling
+     * would thin the evidence on every refresh; rotating keeps it at full strength and just
+     * points it at a different part of the library. The cost is real and worth naming: a
+     * show that six of your library recommend can be absent from the next refresh entirely
+     * if those six are in the other window. That is the trade for variety, and it is the
+     * reason "the same library gives the same list" now holds only for a library at or
+     * under the cap - and for "Favourites", which is never windowed.
+     *
+     * "Favourites" is uncapped and so never rotates. The star is the user saying which
+     * shows that tab is about, so dropping some of them answers a question nobody asked.
+     */
+    private fun seedWindow(
+        tab: DiscoverTab,
+        eligible: List<TrackedShow>,
     ): List<TrackedShow> {
-        val ordered =
-            shows
-                .filter { tab != DiscoverTab.FAVOURITES || it.favourite }
-                .sortedByDescending { it.addedAt }
-        return if (tab == DiscoverTab.FAVOURITES) ordered else ordered.take(MAX_SEEDS)
+        if (tab == DiscoverTab.FAVOURITES || eligible.size <= MAX_SEEDS) return eligible
+
+        val start = seedOffset % eligible.size
+        return List(MAX_SEEDS) { eligible[(start + it) % eligible.size] }
+    }
+
+    /**
+     * Move the window on, so the next refresh asks about different shows.
+     *
+     * Called only where a ranking was actually adopted. A load that kept the previous pool
+     * because a seed would not answer has not shown this window's suggestions to anyone, so
+     * the next refresh should try it again rather than skip past it.
+     *
+     * A library at or under the cap has no second window to move to: every load seeds from
+     * all of it, and refreshing there is still the deterministic re-ask it was.
+     */
+    private fun advanceSeedWindow(
+        tab: DiscoverTab,
+        eligible: Int,
+    ) {
+        if (tab == DiscoverTab.FAVOURITES || eligible <= MAX_SEEDS) return
+        seedOffset = (seedOffset + MAX_SEEDS) % eligible
     }
 
     private suspend fun loadSeeded(
@@ -289,7 +345,8 @@ class DiscoverViewModel(
         val tracked = shows.map { it.id }.toSet()
         val dismissed = library.dismissedIds()
 
-        val seeds = seedsFor(tab, shows)
+        val eligible = eligibleSeeds(tab, shows)
+        val seeds = seedWindow(tab, eligible)
 
         val fetched = retryingFailures(key, seeds.map { it.id })
         // Built by walking the seeds rather than the response map, so the ranking's
@@ -330,6 +387,7 @@ class DiscoverViewModel(
             )
         pool(tab).page = 0
         showPage(tab)
+        advanceSeedWindow(tab, eligible.size)
         // Nothing was kept back, so this is a first list built from an incomplete set. It
         // is shown - a partial list beats a blank tab - but it says so, because the order
         // is not the one the full library would have produced.

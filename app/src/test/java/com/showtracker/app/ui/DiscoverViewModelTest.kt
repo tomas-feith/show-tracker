@@ -28,6 +28,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.TimeUnit
 
 /**
  * The discovery screen's logic, over a real [TmdbClient] pointed at a local server.
@@ -70,6 +71,9 @@ class DiscoverViewModelTest {
             dismissals += id to name
         }
     }
+
+    /** Pulls the show id out of `/3/tv/{id}/recommendations`. */
+    private val seedIdPattern = Regex("""/tv/(\d+)/recommendations""")
 
     private fun show(
         id: Int,
@@ -315,6 +319,107 @@ class DiscoverViewModelTest {
                     .map { it.show.id },
             )
             assertTrue(model.state.value.moreSuggestions)
+        }
+
+    @Test
+    fun `refreshing for you moves the seed window on, and wraps`() =
+        runTest(dispatcher) {
+            // A library half again as big as the cap, so the windows overlap on the wrap
+            // rather than dividing evenly - which is the case that would hide an off-by-one.
+            val size = DiscoverViewModel.MAX_SEEDS + 20
+            server.dispatcher =
+                object : Dispatcher() {
+                    override fun dispatch(request: RecordedRequest): MockResponse =
+                        MockResponse().setBody(recommendations(9001, 9002))
+                }
+
+            // addedAt descending is the seed order, so show 1 is newest and seeds first.
+            val library =
+                FakeLibrary(
+                    (1..size).map { n ->
+                        TrackedShow(
+                            id = 100 + n,
+                            name = "Show $n",
+                            addedAt = "2026-01-01T00:00:%02dZ".format(size - n),
+                        )
+                    },
+                )
+            val model = viewModel(library)
+
+            // Drains only what has arrived since the last call: requestCount is cumulative,
+            // and asking for all of it twice takes more requests than the queue holds. The
+            // timeout is the belt - an untimed takeRequest on an empty queue blocks the
+            // test thread for ever, where a wrong count should merely fail.
+            var drained = 0
+
+            fun seedsAsked(): Set<Int> {
+                val asked = mutableSetOf<Int>()
+                while (drained < server.requestCount) {
+                    val request = server.takeRequest(1, TimeUnit.SECONDS) ?: break
+                    drained += 1
+                    seedIdPattern
+                        .find(request.path.orEmpty())
+                        ?.let { asked += it.groupValues[1].toInt() }
+                }
+                return asked
+            }
+
+            // Ids 101..160, newest first, so a cold start seeds from 101.
+            val newest = 101
+            val oldest = 100 + size
+
+            model.load(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+            val first = seedsAsked()
+            assertEquals("a full window every time", DiscoverViewModel.MAX_SEEDS, first.size)
+            assertEquals("a cold start seeds from the newest", (101..140).toSet(), first)
+
+            model.refresh(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+            val second = seedsAsked()
+            assertEquals(DiscoverViewModel.MAX_SEEDS, second.size)
+            assertTrue("the window has moved on", second != first)
+            // Everything the first window could not reach is asked about now, and the
+            // window wraps to fill itself rather than coming up short at the end.
+            assertTrue((141..oldest).all { it in second })
+            assertTrue("the wrap reaches back round to the newest", newest in second)
+
+            model.refresh(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+            val third = seedsAsked()
+            assertEquals(DiscoverViewModel.MAX_SEEDS, third.size)
+            assertEquals("and carries on from where the wrap left off", (121..160).toSet(), third)
+
+            // Three windows of forty over sixty shows: every show has now seeded at least
+            // once, which is the point of rotating rather than sampling.
+            assertEquals((newest..oldest).toSet(), first + second + third)
+        }
+
+    @Test
+    fun `a library no bigger than the cap seeds from all of it every time`() =
+        runTest(dispatcher) {
+            // Nothing to rotate to, so refreshing stays the deterministic re-ask it was.
+            server.dispatcher =
+                object : Dispatcher() {
+                    override fun dispatch(request: RecordedRequest): MockResponse =
+                        MockResponse().setBody(recommendations(9001, 9002))
+                }
+
+            val model = viewModel(FakeLibrary(listOf(show(1), show(2), show(3))))
+            model.load(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+            val first =
+                model.state.value.forYou.items
+                    .map { it.show.id }
+
+            model.refresh(DiscoverTab.FOR_YOU)
+            advanceUntilIdle()
+
+            assertEquals(
+                first,
+                model.state.value.forYou.items
+                    .map { it.show.id },
+            )
         }
 
     @Test
